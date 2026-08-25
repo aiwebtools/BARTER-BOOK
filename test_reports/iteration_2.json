@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 2 backend-only retest of BarterGrid via public URL (https://trade-network-27.preview.emergentagent.com/api). Created pytest suite at /app/backend/tests/backend_test.py (25 tests, 24 passed / 1 failed). Verified: kind case-insensitivity on create (HAVE/Have -> 'have'), full trade lifecycle (signup A/B/C -> PATCH /profile coords -> HAVE listings with reciprocal wants -> GET /matches surfaces the A<->B pair for BOTH users with score 6 'Excellent Match' and distance_miles 0.0 -> POST /trades -> B action=accept -> B meetup (library, 2026-08-01 14:30) -> both post chat messages -> single-side complete does NOT finish -> both complete => status 'completed' -> both rate 5 stars => successful_trades +1 and reputation_score 5.0, ratings_count 1 for both). Authorization enforced: non-owner PATCH/DELETE listing 403, unauthenticated GET /trades and /listings 401, third-party C blocked (403) from GET /trades/{id}, GET/POST messages and rate. Listing detail enrichment returns user_display_name/user_city/user_reputation/user_trades/distance_miles, no _id leakage. Discover filters mine, kind (lowercase), category, q, radius work; block hides listings in both directions and unblock restores them. Duplicate rating returns 400. Only defect: GET /api/listings?kind=HAVE (uppercase query param) returns [].",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/listings?kind=HAVE", "issue": "kind query filter is not lowercased server-side (unlike POST/PATCH /listings), so uppercase/mixed-case kind returns an empty list instead of matching listings. Fix: kind = kind.lower() in list_listings."},
+      {"endpoint": "GET|POST /api/trades/{id}/messages", "issue": "Returns 403 for a non-existent trade_id (should be 404); leaks no info but inconsistent with GET /trades/{id} which returns 404."},
+      {"endpoint": "POST /api/trades/{id}/rate", "issue": "RatingIn.stars has no range validation (accepts values like 0, 99, -5). Add Field(ge=1, le=5) - could corrupt reputation_score averages."},
+      {"endpoint": "POST /api/trades/{id}/action, /meetup, /rate", "issue": "Several 403/404 raises have no detail message (HTTPException(403)), producing generic 'Forbidden' bodies for the frontend."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Lowercase the `kind` query param in GET /api/listings so ?kind=HAVE works (only failing test).",
+    "Add Field(ge=1, le=5) to RatingIn.stars.",
+    "Optional: return 404 (not 403) for messages endpoints when trade_id does not exist, and add detail strings to bare HTTPException(403) raises."
+  ],
+  "critical_code_review_comments": [
+    "list_listings: `query['kind'] = kind` bypasses the normalization applied at create/update time - inconsistent contract.",
+    "trade_action 'complete': unused variable `both = ...` (dead code); also 'cancel'/'complete' are allowed from any status (e.g. a declined or already-completed trade can be re-completed/cancelled) - consider state guards.",
+    "trade_action allows repeated action=complete by the same user; harmless today because successful_trades only increments on the transition, but a completed trade can be re-cancelled which would leave counters inflated.",
+    "ProfileUpdate strips None values, so users can never clear bio/city (send-empty-string works, but null is silently ignored).",
+    "rate_trade recomputes averages by loading all ratings for a user (find(...).to_list(1000)) - fine at current scale, use an aggregation if volume grows."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "96% (24/25)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Per-run ephemeral users TEST_alice/TEST_bob/TEST_carol with random emails (password Passw0rd!23), two listings (Water Filter / Bike Lock) deleted on teardown, one completed trade + 2 ratings left in DB.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md is empty; tests self-register users via POST /api/auth/signup (password Passw0rd!23).",
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/backend_test.py -v. Suite is self-contained (creates its own users/listings/trade). test_filter_kind_uppercase_query is the only known failure and asserts the kind-query normalization fix. Frontend UI was never tested in iterations 1-2.",
+  "rca_of_the_issue": "list_listings() assigns the raw `kind` query param into the Mongo query while listings are stored lowercase (normalized in create_listing/update_listing), so any non-lowercase kind value matches zero documents."
+}

@@ -1,0 +1,129 @@
+{
+  "theme": "light",
+  "typography": {
+    "fonts": {
+      "heading": "Outfit",
+      "body": "Inter",
+      "import_instructions": "Add Google Fonts link for Outfit and Inter in public/index.html or import in CSS."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-bold",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-semibold",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-muted-foreground",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "palette_name": "Organic & Earthy (Modern Community)",
+    "css_variables": {
+      "light": {
+        "--background": "40 20% 98%",
+        "--foreground": "240 10% 15%",
+        "--card": "0 0% 100%",
+        "--card-foreground": "240 10% 15%",
+        "--popover": "0 0% 100%",
+        "--popover-foreground": "240 10% 15%",
+        "--primary": "145 35% 25%",
+        "--primary-foreground": "0 0% 100%",
+        "--secondary": "15 70% 55%",
+        "--secondary-foreground": "0 0% 100%",
+        "--muted": "40 15% 90%",
+        "--muted-foreground": "240 5% 45%",
+        "--accent": "40 50% 90%",
+        "--accent-foreground": "240 10% 15%",
+        "--destructive": "0 84% 60%",
+        "--destructive-foreground": "0 0% 98%",
+        "--border": "40 15% 85%",
+        "--input": "40 15% 85%",
+        "--ring": "145 35% 25%",
+        "--radius": "1rem"
+      },
+      "dark": {
+        "--background": "240 10% 10%",
+        "--foreground": "40 20% 95%",
+        "--card": "240 10% 12%",
+        "--card-foreground": "40 20% 95%",
+        "--popover": "240 10% 12%",
+        "--popover-foreground": "40 20% 95%",
+        "--primary": "145 30% 45%",
+        "--primary-foreground": "0 0% 100%",
+        "--secondary": "15 60% 50%",
+        "--secondary-foreground": "0 0% 100%",
+        "--muted": "240 10% 18%",
+        "--muted-foreground": "40 10% 65%",
+        "--accent": "240 10% 20%",
+        "--accent-foreground": "40 20% 95%",
+        "--destructive": "0 62% 40%",
+        "--destructive-foreground": "0 0% 98%",
+        "--border": "240 10% 18%",
+        "--input": "240 10% 18%",
+        "--ring": "145 30% 45%",
+        "--radius": "1rem"
+      }
+    },
+    "usage": "Use Primary (Forest Green) for main CTAs. Use Secondary (Terracotta) for 'Needs', urgent actions, and alerts. Use Accent (Warm Sand) for 'Haves' badges and secondary surfaces. The Off-White background provides a warm, organic, trustworthy community feel."
+  },
+  "visual_enhancers": {
+    "surfaces": "Use Flat Solid surfaces with crisp 1px borders (border-border). For sticky headers, MUST use Crystal Glass (backdrop-blur-xl bg-background/80 border-b border-border/50) - NEVER fully transparent. Cards should have generous padding (p-6 or p-8) and rely on 1px borders rather than heavy box shadows.",
+    "shapes": "Nested radii. Containers: rounded-2xl (1rem). Inner images/blocks: rounded-xl. Buttons: Pill-shaped (rounded-full).",
+    "textures": "Include subtle SVG noise or a light dotted grid pattern in the hero section to evoke the 'connected local nodes' concept without looking overly technical.",
+    "animations": "Hover states must include a slight lift (-translate-y-1) and subtle shadow increase (shadow-md). Use framer-motion for staggering list items in feeds."
+  },
+  "layouts": {
+    "spacing": "Generous Spacing: use p-6, p-8, p-12. Prevent content collision with borders.",
+    "grid": "Use Bento Grid configurations for Discover feeds and Dashboards. Mix col-span-2 and col-span-1 to create visual asymmetry and interest.",
+    "forms": "Labels must be left-aligned. Inputs should have h-12 with generous padding and clear focus states (focus:ring-2 focus:ring-primary)."
+  },
+  "component_instructions": {
+    "buttons": "Pill-shaped (rounded-full). Specific hover transitions (transition-colors transition-transform duration-200). Avoid generic sizing.",
+    "cards": "Listing Cards MUST clearly label 'HAVE' vs 'NEED' vs 'CAN DO' using colored pill badges. HAVE = Accent BG / Foreground Text. NEED = Secondary BG / White Text. CAN DO = Primary BG / White Text.",
+    "navigation": "Sticky top nav MUST have backdrop blur and background color. Include Logo, Nav Links, and a prominent 'Post Listing' CTA button.",
+    "tabs": "Override default Shadcn Tabs. Remove fixed h-9 to h-auto. Make them look like floating pills with generous padding.",
+    "chat": "Trade detail chat: Use clear chat bubbles. User = right-aligned. Match = left-aligned."
+  },
+  "media": {
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "install_command": "yarn add @phosphor-icons/react",
+      "style": "Use Duotone weight for a friendly, approachable aesthetic."
+    },
+    "images": {
+      "hero_background": "https://images.unsplash.com/photo-1604881988758-f76ad2f7aac1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxkaXZlcnNlJTIwY29tbXVuaXR5JTIwcGVvcGxlJTIwY2hhdHRpbmclMjBjb2ZmZWV8ZW58MHx8fHwxNzg3Njg1NTM3fDA&ixlib=rb-4.1.0&q=85",
+      "category_services": "https://images.unsplash.com/photo-1590650046871-92c887180603?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwzfHxkaXZlcnNlJTIwY29tbXVuaXR5JTIwcGVvcGxlJTIwY2hhdHRpbmclMjBjb2ZmZWV8ZW58MHx8fHwxNzg3Njg1NTM3fDA&ixlib=rb-4.1.0&q=85",
+      "item_camera": "https://images.unsplash.com/photo-1469355331083-1f22d5a747ae?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwzfHx2aW50YWdlJTIwY2FtZXJhJTIwZGVza3xlbnwwfHx8fDE3ODc2ODU1Mzd8MA&ixlib=rb-4.1.0&q=85",
+      "item_drill": "https://images.unsplash.com/photo-1608613304810-2d4dd52511a2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwyfHx0b29scyUyMHBvd2VyJTIwZHJpbGwlMjBvbiUyMHRhYmxlfGVufDB8fHx8MTc4NzY4NTU1NHww&ixlib=rb-4.1.0&q=85",
+      "item_plant": "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxwb3R0ZWQlMjBpbmRvb3IlMjBwbGFudCUyMG1vbnN0ZXJhfGVufDB8fHx8MTc4NzY4NTU1NHww&ixlib=rb-4.1.0&q=85",
+      "item_pottery": "https://images.unsplash.com/photo-1577576223085-3eb295cd414f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxoYW5kbWFkZSUyMHBvdHRlcnklMjBib3dsfGVufDB8fHx8MTc4NzY4NTU1NHww&ixlib=rb-4.1.0&q=85",
+      "service_gardening": "https://images.unsplash.com/photo-1781785202024-bbc831bb46dc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwzfHxwZXJzb24lMjBnYXJkZW5pbmclMjBjb21tdW5pdHl8ZW58MHx8fHwxNzg3Njg1NTU0fDA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "libraries": {
+    "motion": "framer-motion (for micro-interactions, layout animations, and list staggering)",
+    "toasts": "sonner (for notifications)",
+    "date_picker": "shadcn Calendar component",
+    "icons": "@phosphor-icons/react"
+  },
+  "accessibility": {
+    "contrast": "Maintain 4.5:1 ratio for standard text. Never place grey text on a grey background.",
+    "focus": "Always include high-contrast focus rings on interactive elements.",
+    "test_ids": "All interactive and key informational elements MUST include a 'data-testid' attribute in kebab-case (e.g., 'submit-trade-button', 'listing-item-card')."
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do not use generic centered layouts or simplistic gradients.",
+    "Do not apply 'transition: all'. Apply specific transitions (e.g., transition-colors, transition-transform).",
+    "Do not center align the app container in CSS (.App { text-align: center; } is strictly BANNED).",
+    "Use modern pill-shaped or rounded-xl buttons with interaction animations.",
+    "Do not use AI assistant Emoji characters (🤖, 🧠, 💭, etc) for icons. Rely on Phosphor Icons.",
+    "Use 2-3x more spacing than feels comfortable. p-6 or p-8 minimum for card padding.",
+    "Use layered design elements with z-index hierarchy. Add glass-morphism to headers (backdrop-blur-xl) but NEVER fully transparent.",
+    "NEVER use placeholder URLs. Use the provided Unsplash images.",
+    "All interactive elements MUST include data-testid.",
+    "Use sonner for toasts. Do not build a custom HTML toast from scratch.",
+    "Prioritize Shadcn UI primitives over custom HTML select/input.",
+    "Ensure 'Connected local nodes' visual concept is respected by using a light dotted or faint mesh background pattern in the hero/landing page.",
+    "Note: Ensure to write component logic in standard .js/.jsx extensions since this project does not use TypeScript by default."
+  ]
+}

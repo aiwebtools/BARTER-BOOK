@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.font-heading { font-family: 'Outfit', sans-serif; }
+
+@layer base {
+    :root {
+        --background: 40 20% 98%;
+        --foreground: 240 10% 15%;
+        --card: 0 0% 100%;
+        --card-foreground: 240 10% 15%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 240 10% 15%;
+        --primary: 145 35% 25%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 15 70% 55%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 40 15% 90%;
+        --muted-foreground: 240 5% 45%;
+        --accent: 40 50% 90%;
+        --accent-foreground: 240 10% 15%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 40 15% 85%;
+        --input: 40 15% 85%;
+        --ring: 145 35% 25%;
+        --chart-1: 145 35% 25%;
+        --chart-2: 15 70% 55%;
+        --chart-3: 40 50% 60%;
+        --chart-4: 200 60% 50%;
+        --chart-5: 280 50% 55%;
+        --radius: 1rem;
+    }
+    .dark {
+        --background: 240 10% 10%;
+        --foreground: 40 20% 95%;
+        --card: 240 10% 12%;
+        --card-foreground: 40 20% 95%;
+        --popover: 240 10% 12%;
+        --popover-foreground: 40 20% 95%;
+        --primary: 145 30% 45%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 15 60% 50%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 240 10% 18%;
+        --muted-foreground: 40 10% 65%;
+        --accent: 240 10% 20%;
+        --accent-foreground: 40 20% 95%;
+        --destructive: 0 62% 40%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 240 10% 18%;
+        --input: 240 10% 18%;
+        --ring: 145 30% 45%;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; font-family: 'Inter', sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; letter-spacing: -0.01em; }
+}
+
+.dot-grid {
+    background-image: radial-gradient(hsl(var(--primary) / 0.15) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+.mesh-bg {
+    background:
+      radial-gradient(at 15% 20%, hsl(145 40% 90% / 0.6) 0px, transparent 50%),
+      radial-gradient(at 85% 15%, hsl(40 60% 88% / 0.7) 0px, transparent 50%),
+      radial-gradient(at 75% 85%, hsl(15 70% 92% / 0.6) 0px, transparent 50%);
+}
+
+.pill { @apply rounded-full; }
+
+/* Match connect line animation */
+@keyframes pulse-connect {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+.pulse-connect { animation: pulse-connect 2s ease-in-out infinite; }
+
+.card-hover {
+    transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+.card-hover:hover {
+    transform: translateY(-2px);
+    @apply shadow-md;
+}

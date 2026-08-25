@@ -1,0 +1,2 @@
+/* Reset the CRA defaults that break our design */
+.App { text-align: left; }
