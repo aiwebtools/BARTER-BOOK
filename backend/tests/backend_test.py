@@ -189,9 +189,14 @@ def test_unauthenticated_trades_401():
     assert r.status_code == 401, r.status_code
 
 
-def test_unauthenticated_listings_401():
+def test_unauthenticated_listings_public():
+    """Iteration 4 contract change: /listings is public for guest browsing (was 401)."""
     r = requests.get(f"{BASE}/listings", timeout=30)
-    assert r.status_code == 401, r.status_code
+    assert r.status_code == 200, r.status_code
+    assert isinstance(r.json(), list)
+    # ...but ?mine=true still requires auth
+    r2 = requests.get(f"{BASE}/listings", params={"mine": "true"}, timeout=30)
+    assert r2.status_code == 401, r2.status_code
 
 
 def test_non_owner_cannot_patch_or_delete(world):

@@ -118,11 +118,17 @@ export function ListingDetail() {
           )}
 
           <div className="rounded-xl bg-muted/50 p-4 mb-6">
-            <div className="text-sm">
-              <span className="font-semibold">{listing.user_display_name}</span> · {listing.user_city || "Nearby"}
-              {listing.distance_miles != null && ` · ${listing.distance_miles} mi away`}
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <Link to={`/u/${listing.user_id}`} className="font-semibold hover:text-primary transition-colors" data-testid="owner-link">{listing.user_display_name}</Link>
+                <span className="text-sm text-muted-foreground"> · {listing.user_city || "Nearby"}</span>
+                {listing.distance_miles != null && <span className="text-sm text-muted-foreground"> · {listing.distance_miles} mi away</span>}
+                <div className="text-xs text-muted-foreground mt-1">⭐ {(listing.user_reputation || 0).toFixed(1)} · {listing.user_trades || 0} trades completed</div>
+              </div>
+              {!mine && (
+                <Button variant="outline" size="sm" className="rounded-full shrink-0" onClick={() => nav(`/messages/${listing.user_id}`)} data-testid="msg-owner">Message</Button>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">⭐ {(listing.user_reputation || 0).toFixed(1)} · {listing.user_trades || 0} trades completed</div>
           </div>
 
           {mine ? (
@@ -148,6 +154,16 @@ export function ListingDetail() {
                   {myHaves.length === 0 && <p className="text-xs text-muted-foreground mt-3">You need to post an "I HAVE" listing first. <Link to="/new" className="text-primary underline">Post one</Link></p>}
                 </div>
               )}
+              <button
+                onClick={async () => {
+                  const reason = window.prompt("Report reason (spam, scam, prohibited, harassment, other):");
+                  if (!reason) return;
+                  try { await api.post("/reports", { target_type: "listing", target_id: listing.listing_id, reason }); toast.success("Reported. Our team will review."); }
+                  catch { toast.error("Failed"); }
+                }}
+                className="mt-4 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                data-testid="report-listing"
+              >Report this listing</button>
             </>
           )}
         </div>

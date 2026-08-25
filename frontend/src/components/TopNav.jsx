@@ -1,13 +1,16 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { House, MagnifyingGlass, ListPlus, Handshake, ChatCircleText, User, SignOut, GridFour } from "@phosphor-icons/react";
+import NotificationBell from "@/components/NotificationBell";
+import { House, MagnifyingGlass, ListPlus, Handshake, ChatCircleText, User, SignOut, GridFour, ListChecks, ShieldWarning, EnvelopeSimple, Gear } from "@phosphor-icons/react";
 
 const links = [
   { to: "/dashboard", label: "Home", icon: House },
   { to: "/discover", label: "Discover", icon: MagnifyingGlass },
-  { to: "/listings", label: "My Listings", icon: GridFour },
+  { to: "/listings", label: "Listings", icon: GridFour },
+  { to: "/needs", label: "Needs", icon: ListChecks },
   { to: "/matches", label: "Matches", icon: Handshake },
+  { to: "/messages", label: "Messages", icon: EnvelopeSimple },
   { to: "/trades", label: "Trades", icon: ChatCircleText },
 ];
 
@@ -30,7 +33,7 @@ export default function TopNav() {
               to={to}
               data-testid={`nav-${label.toLowerCase().replace(/ /g, "-")}`}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                `flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium transition-colors ${
                   isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 }`
               }
@@ -39,9 +42,14 @@ export default function TopNav() {
               <span>{label}</span>
             </NavLink>
           ))}
+          {user?.role === "admin" && (
+            <NavLink to="/admin" data-testid="nav-admin" className={({ isActive }) => `flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium transition-colors ${isActive ? "bg-secondary text-secondary-foreground" : "text-secondary hover:bg-secondary/10"}`}>
+              <ShieldWarning size={18} weight="duotone" /> <span>Admin</span>
+            </NavLink>
+          )}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             onClick={() => nav("/new")}
             className="rounded-full hidden sm:inline-flex"
@@ -49,12 +57,16 @@ export default function TopNav() {
           >
             <ListPlus size={18} weight="bold" className="mr-1" /> Post
           </Button>
-          <Link to="/profile" className="w-10 h-10 rounded-full bg-muted grid place-items-center hover:bg-accent transition-colors" data-testid="nav-profile">
+          <NotificationBell />
+          <Link to="/profile" className="w-10 h-10 rounded-full bg-muted grid place-items-center hover:bg-accent transition-colors overflow-hidden" data-testid="nav-profile">
             {user?.picture ? (
               <img src={user.picture} alt="" className="w-10 h-10 rounded-full object-cover" />
             ) : (
               <User size={20} weight="duotone" />
             )}
+          </Link>
+          <Link to="/settings" className="p-2 rounded-full hover:bg-muted transition-colors hidden sm:inline-flex" data-testid="nav-settings" aria-label="Settings">
+            <Gear size={20} weight="duotone" />
           </Link>
           <button onClick={logout} className="p-2 rounded-full hover:bg-muted transition-colors hidden sm:inline-flex" data-testid="logout-btn" aria-label="Logout">
             <SignOut size={20} />
@@ -73,7 +85,7 @@ export function BottomNav() {
           { to: "/dashboard", label: "Home", icon: House },
           { to: "/discover", label: "Discover", icon: MagnifyingGlass },
           { to: "/new", label: "Post", icon: ListPlus },
-          { to: "/matches", label: "Matches", icon: Handshake },
+          { to: "/messages", label: "Chat", icon: EnvelopeSimple },
           { to: "/trades", label: "Trades", icon: ChatCircleText },
         ].map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={({ isActive }) => `flex flex-col items-center gap-1 py-2 text-xs ${isActive ? "text-primary" : "text-muted-foreground"}`}>

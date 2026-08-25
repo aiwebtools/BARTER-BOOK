@@ -42,39 +42,49 @@ export default function Landing() {
         <div className="relative max-w-7xl mx-auto px-6 py-24 lg:py-32 grid lg:grid-cols-2 gap-16 items-center">
           <div className="space-y-8">
             <span className="inline-flex items-center gap-2 pill px-4 py-1.5 bg-card border border-border text-xs font-semibold tracking-widest uppercase">
-              <span className="w-2 h-2 rounded-full bg-primary pulse-connect" /> Local exchange, real people
+              <span className="w-2 h-2 rounded-full bg-primary pulse-connect" /> Free · No fees · Community-owned
             </span>
             <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
-              Trade what you have<br />for what you <span className="text-primary">need.</span>
+              Everything you need is already<br />in your <span className="text-primary">neighborhood.</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-xl leading-relaxed">
-              BarterGrid connects neighbors who want to exchange goods, skills, and resources — without price tags.
-              The things you need may already exist in your community.
+              BarterGrid is the free local trading network. Post what you have, tell us what you need, and we'll match you with real neighbors — no prices, no listings fees, no middleman.
+              Trade tools, food, skills, rides, garden goods, help around the house — anything.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Button size="lg" className="rounded-full h-12 px-8" onClick={() => nav("/signup")} data-testid="hero-cta">
-                Start Trading — it's free
+              <Button size="lg" className="rounded-full h-12 px-8 shine" onClick={() => nav("/signup")} data-testid="hero-cta">
+                Join free — takes 30 seconds
               </Button>
               <Button size="lg" variant="outline" className="rounded-full h-12 px-8" onClick={() => nav("/discover")} data-testid="hero-explore">
-                Explore Nearby
+                Browse listings
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">3,200+ neighbors already trading · No credit card ever required.</p>
           </div>
 
-          {/* Visual: connected nodes */}
+          {/* Visual: photo + connected nodes */}
           <div className="relative">
-            <div className="rounded-3xl bg-card border border-border p-8 shadow-xl">
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <NodeCard kind="have" title="Water Filter" name="Maya" />
-                <div className="flex flex-col items-center gap-2">
-                  <ArrowsClockwise size={44} weight="duotone" className="text-primary pulse-connect" />
-                  <span className="text-xs font-semibold uppercase tracking-widest text-primary">Match</span>
+            <div className="absolute -inset-6 rounded-[2rem] bg-primary/10 blur-2xl" aria-hidden />
+            <div className="relative rounded-3xl bg-card border border-border overflow-hidden shadow-xl">
+              <img
+                src="https://images.unsplash.com/photo-1604881988758-f76ad2f7aac1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxkaXZlcnNlJTIwY29tbXVuaXR5JTIwcGVvcGxlJTIwY2hhdHRpbmclMjBjb2ZmZWV8ZW58MHx8fHwxNzg3Njg1NTM3fDA&ixlib=rb-4.1.0&q=85"
+                alt="Neighbors exchanging goods"
+                className="w-full h-72 object-cover"
+                loading="eager"
+              />
+              <div className="p-6">
+                <div className="grid grid-cols-3 gap-3 items-center">
+                  <NodeCard kind="have" title="Water Filter" name="Maya" />
+                  <div className="flex flex-col items-center gap-1">
+                    <ArrowsClockwise size={36} weight="duotone" className="text-primary pulse-connect" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">Match</span>
+                  </div>
+                  <NodeCard kind="need" title="Bike Lock" name="Jordan" />
                 </div>
-                <NodeCard kind="need" title="Bike Lock" name="Jordan" />
-              </div>
-              <div className="mt-8 pt-6 border-t border-border grid grid-cols-2 gap-4">
-                <StatMini icon={Users} n="3,200+" label="Traders" />
-                <StatMini icon={Handshake} n="8,900+" label="Trades" />
+                <div className="mt-6 pt-4 border-t border-border grid grid-cols-2 gap-4">
+                  <StatMini icon={Users} n="Free forever" label="No fees, no premium walls" />
+                  <StatMini icon={Handshake} n="Real trades" label="Real neighbors, real value" />
+                </div>
               </div>
             </div>
           </div>

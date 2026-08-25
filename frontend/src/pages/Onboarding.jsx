@@ -26,6 +26,34 @@ export default function Onboarding() {
   const [radius, setRadius] = useState(10);
   const [saving, setSaving] = useState(false);
 
+  const useDeviceLocation = async () => {
+    if (!navigator.geolocation) { toast.error("Your browser doesn't support geolocation"); return; }
+    setSaving(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        // reverse geocode via free nominatim (no key)
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&zoom=10&addressdetails=1`, { headers: { "Accept-Language": "en" } });
+        const j = await r.json();
+        const addr = j.address || {};
+        const city2 = addr.city || addr.town || addr.village || addr.suburb || addr.county || "";
+        const state2 = addr.state_code || addr.state || "";
+        setCity(city2);
+        setState(state2);
+        await api.patch("/profile", {
+          city: city2, state: (state2 || "").slice(0, 3).toUpperCase(),
+          country: addr.country || "USA",
+          approx_lat: pos.coords.latitude, approx_lng: pos.coords.longitude,
+          search_radius_miles: radius,
+        });
+        await refresh();
+        toast.success("Location detected!");
+        nav("/dashboard");
+      } catch {
+        toast.error("Couldn't detect your city — enter it manually.");
+      } finally { setSaving(false); }
+    }, () => { toast.error("Location permission denied. Enter your city manually."); setSaving(false); }, { timeout: 10000 });
+  };
+
   const save = async () => {
     setSaving(true);
     const key = `${city.toLowerCase().trim()}, ${state.toLowerCase().trim()}`;
@@ -75,9 +103,19 @@ export default function Onboarding() {
             </div>
           </div>
 
-          <Button onClick={save} disabled={!city || !state || saving} className="w-full h-12 rounded-full mt-8" data-testid="onboarding-submit">
+          <Button onClick={save} disabled={!city || !state || saving} className="w-full h-12 rounded-full mt-8 shine" data-testid="onboarding-submit">
             {saving ? "Saving…" : "Enter BarterGrid"}
           </Button>
+
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+            <div className="relative flex justify-center text-xs uppercase tracking-widest"><span className="bg-card px-3 text-muted-foreground">or</span></div>
+          </div>
+
+          <Button type="button" variant="outline" onClick={useDeviceLocation} disabled={saving} className="w-full h-12 rounded-full" data-testid="use-device-location">
+            📍 Use my device location
+          </Button>
+          <p className="text-xs text-muted-foreground mt-3 text-center">We only store an approximate city and coordinates — never your exact address.</p>
         </div>
       </div>
     </div>

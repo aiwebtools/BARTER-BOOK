@@ -2,26 +2,54 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <meta name="description" content="A product of emergent.sh" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="theme-color" content="#2f5f3d" />
+
+        <!-- SEO -->
+        <title>BarterGrid — Trade what you have for what you need. Free local barter network.</title>
+        <meta name="description" content="BarterGrid is a free local barter network. Trade goods, skills, and services with neighbors — no price tags, no fees. Find matches, chat safely, meet in public, build real reputation." />
+        <meta name="keywords" content="barter, trade, local exchange, community, swap, free trade app, skills, neighbors, mutual aid, no money, gift economy" />
+        <meta name="author" content="BarterGrid" />
+        <link rel="canonical" href="https://bartergrid.app/" />
+        <meta name="robots" content="index, follow" />
+
+        <!-- Open Graph / Facebook -->
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="BarterGrid" />
+        <meta property="og:title" content="BarterGrid — Trade what you have for what you need." />
+        <meta property="og:description" content="A free local barter network. Trade goods, skills, and services with neighbors — no price tags, no fees." />
+        <meta property="og:image" content="%PUBLIC_URL%/og-cover.svg" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:url" content="https://bartergrid.app/" />
+
+        <!-- Twitter Card -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="BarterGrid — Trade what you have for what you need." />
+        <meta name="twitter:description" content="A free local barter network. Trade goods, skills, and services with neighbors — no price tags." />
+        <meta name="twitter:image" content="%PUBLIC_URL%/og-cover.svg" />
+
+        <!-- Icons -->
+        <link rel="icon" type="image/svg+xml" href="%PUBLIC_URL%/logo.svg" />
+        <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo.svg" />
+
+        <!-- Structured data -->
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "BarterGrid",
+          "description": "A free local barter network. Trade goods, skills, and services with neighbors.",
+          "applicationCategory": "SocialNetworkingApplication",
+          "operatingSystem": "Any",
+          "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+        }
+        </script>
+
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />
-        <!--
-        manifest.json provides metadata used when your web app is installed on a
-        user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-        -->
-        <!--
-        Notice the use of %PUBLIC_URL% in the tags above.
-        It will be replaced with the URL of the `public` folder during the build.
-        Only files inside the `public` folder can be referenced from the HTML.
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-        Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-        work correctly both with client-side routing and a non-root public URL.
-        Learn how to configure a non-root public URL by running `npm run build`.
-        -->
-        <title>Emergent | Fullstack App</title>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>

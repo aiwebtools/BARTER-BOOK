@@ -27,6 +27,10 @@ export default function NewListing() {
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [ships, setShips] = useState(false);
+  const [shippingFee, setShippingFee] = useState("");
+  const [shippingNotes, setShippingNotes] = useState("");
 
   const upload = async (file) => {
     setUploading(true);
@@ -41,6 +45,16 @@ export default function NewListing() {
     } finally { setUploading(false); }
   };
 
+  const aiSuggest = async () => {
+    if (!title.trim()) { toast.error("Add a title first"); return; }
+    setSuggesting(true);
+    try {
+      const r = await api.post("/ai/suggest-category", { title, description });
+      if (r.data?.category) { setCategory(r.data.category); toast.success(`AI suggests: ${r.data.category}`); }
+    } catch { toast.error("Couldn't reach AI"); }
+    finally { setSuggesting(false); }
+  };
+
   const submit = async () => {
     if (!title.trim()) { toast.error("Add a title"); return; }
     setSaving(true);
@@ -51,11 +65,14 @@ export default function NewListing() {
         quantity: quantity || null,
         wants: kind === "have" ? wants : [],
         photos, tags: [],
+        ships, shipping_fee: ships ? (shippingFee || null) : null,
+        shipping_notes: ships ? (shippingNotes || null) : null,
       });
       toast.success("Listing posted!");
       nav("/listings");
     } catch (e) {
-      toast.error("Couldn't post listing");
+      const msg = e.response?.data?.detail || "Couldn't post listing";
+      toast.error(msg);
     } finally { setSaving(false); }
   };
 
@@ -91,7 +108,12 @@ export default function NewListing() {
         </div>
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="cat">Category</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="cat">Category</Label>
+              <button type="button" onClick={aiSuggest} disabled={suggesting} className="text-xs font-medium text-primary hover:underline disabled:opacity-50" data-testid="ai-suggest-category">
+                {suggesting ? "AI thinking…" : "✨ Ask AI"}
+              </button>
+            </div>
             <select id="cat" value={category} onChange={(e) => setCategory(e.target.value)} className="h-12 w-full rounded-xl border border-border bg-background px-3 mt-1" data-testid="listing-category">
               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
             </select>
@@ -105,6 +127,21 @@ export default function NewListing() {
             </div>
           )}
         </div>
+
+        {kind !== "need" && (
+          <div className="rounded-xl border border-border p-4 bg-background">
+            <label className="flex items-center gap-2 font-medium cursor-pointer">
+              <input type="checkbox" checked={ships} onChange={(e) => setShips(e.target.checked)} data-testid="listing-ships" />
+              Willing to ship this item
+            </label>
+            {ships && (
+              <div className="mt-3 grid sm:grid-cols-2 gap-3">
+                <Input placeholder="Shipping fee (e.g. $12 or trade extra)" value={shippingFee} onChange={(e) => setShippingFee(e.target.value)} className="h-11 rounded-xl" data-testid="listing-shipping-fee" />
+                <Input placeholder="Notes (e.g. USPS, up to 5 lbs)" value={shippingNotes} onChange={(e) => setShippingNotes(e.target.value)} className="h-11 rounded-xl" data-testid="listing-shipping-notes" />
+              </div>
+            )}
+          </div>
+        )}
 
         {kind === "have" && (
           <div>

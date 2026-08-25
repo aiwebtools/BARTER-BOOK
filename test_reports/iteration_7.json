@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration-7 backend-only regression. Wrote /app/backend/tests/test_iteration7.py (8 targeted tests) covering all 3 claimed fixes + referral unconditionality — all 8 PASS. However, the full suite regression run (115 tests) surfaced a CRITICAL regression introduced by the new _should_notify helper: users who have never PATCHed notification prefs (i.e. every freshly registered user) receive ZERO in-app notifications. 12 previously-passing tests across backend_test.py / test_iteration4.py / test_iteration5.py / test_iteration6.py now fail because of it. RCA proven with a dedicated probe test.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "server.py::_should_notify (affects GET /api/notifications for all default users; producers: POST /api/conversations/{id}/messages, POST /api/trades, POST /api/trades/{id}/action, POST /api/trades/{id}/meetup, POST /api/trades/{id}/messages)",
+        "issue": "_should_notify() does `u = await db.users.find_one({user_id}, {'_id':0,'notify_matches':1,'notify_messages':1,'notify_trades':1})` then `if not u: return False`. POST /api/auth/signup (and the Google session upsert) never write notify_matches/notify_messages/notify_trades onto the user doc, so the projection returns an EMPTY DICT `{}` for every default user. `{}` is falsy -> returns False -> _add_notification silently drops the row. Net effect: NO in-app notification of any type (message, trade_proposal, trade, meetup, rating_request) is ever created for a user until they explicitly PATCH /api/profile with a notify_* field. Fix: project a field that always exists (e.g. add \"user_id\": 1) and change the guard to `if u is None: return False`; and/or default notify_matches/notify_messages/notify_trades to True in the signup + google-session user docs (plus a backfill for existing users).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "server.py::_queue_email vs _should_notify",
+        "issue": "Two divergent cat_map dictionaries with different key vocabularies (email uses 'direct_message'/'trade_message'/'trade_update'/'trade_completed'/'meetup_planned'; in-app uses 'message'/'trade'/'meetup'/'rating_request'). Any new notification type added to one side and not the other silently bypasses prefs. Recommend a single shared NOTIF_PREF_MAP keyed by notification type."
+      },
+      {
+        "endpoint": "POST /api/trades/{id}/messages",
+        "issue": "Notification/email text uses the raw un-stripped inp.text (`inp.text[:60]` / `inp.text[:140]`) while the stored message uses inp.text.strip(). Leading whitespace leaks into notification previews. Cosmetic but inconsistent with the DM path which now uses the stripped value."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/backend/tests/test_iteration7_rca.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: fix _should_notify so a user doc missing notify_* fields is treated as opted-IN (project user_id and use `if u is None`), and/or set notify_matches/notify_messages/notify_trades = True in the signup + google-session user docs. Backfill existing users.",
+    "Re-run full suite after the fix: the 12 currently failing notification tests plus tests/test_iteration7_rca.py must pass.",
+    "Unify the two preference category maps (_queue_email and _should_notify) into one constant.",
+    "Use the stripped text for trade-message notification/email previews."
+  ],
+  "critical_code_review_comments": [
+    "MongoDB projection truthiness trap: `find_one(filter, {'_id':0, <optional fields>})` returns {} (falsy) for an existing doc that lacks all projected fields — never use `if not doc` as an existence check with such a projection.",
+    "Preference defaults must be materialised at user-creation time (or resolved with an explicit `is False` check on a doc that is guaranteed non-empty); relying on absent fields is fragile.",
+    "server.py is 1199 lines — close to the 700-line guidance; consider splitting auth/listings/trades/messaging/notifications into routers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/backend/tests/test_iteration7_rca.py"
+  ],
+  "success_rate": {"backend": "90% (103/115 full suite; 8/8 iteration-7 targeted tests pass, 12 regressions all from one root cause)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Ephemeral TEST_i7_* / TEST_i7rca_* users, TEST_i7 listings (deleted in test teardown), trades, DMs and notifications created via public API.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Self-registered via POST /api/auth/signup, password Passw0rd!23 (per /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Verified for iteration 7: (1) prefs ARE honoured for all 6 in-app insertion sites — notify_messages=false suppresses DM + trade-chat in-app AND email; notify_trades=false suppresses trade_proposal, accept, decline, meetup and rating_request; flipping back to true restores all of them (test_iteration7.py). (2) referral_verified fires even with all three prefs false. (3) DM 422 on whitespace-only text creates no conversation row and does not bump last_message/last_message_at of an existing conversation. (4) DM last_message is stored stripped (verified via GET /api/conversations AND directly in mongo). The ONLY open defect is the default-prefs regression documented above; every iteration-7 test explicitly PATCHes prefs first, which is why they pass while the older suites (which rely on defaults) fail. After the main agent fixes _should_notify, run: cd /app/backend && python -m pytest tests/ -v.",
+  "rca_of_the_issue": "Reproduction: POST /api/auth/signup two users A and B (no profile PATCH); A sends B a DM via POST /api/conversations/{B}/messages -> 200; GET /api/notifications as B returns []. Root cause: signup's user document omits notify_matches/notify_messages/notify_trades, so _should_notify's field-limited projection yields {} which the `if not u: return False` guard interprets as 'user not found' and blocks the insert. Same path blocks trade_proposal/trade/meetup/rating_request notifications for all default users. Mitigation: guard on `u is None` with user_id included in the projection, and write explicit True defaults at user creation."
+}

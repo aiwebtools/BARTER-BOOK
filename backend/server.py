@@ -96,6 +96,63 @@ def haversine_miles(lat1, lng1, lat2, lng2) -> float:
     a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
     return 2 * R * math.asin(math.sqrt(a))
 
+async def _queue_email(user_id: str, kind: str, subject: str, data: dict = None):
+    """Queue an email for a user event. Delivery requires a provider key (Resend/SendGrid).
+    Until then, entries sit in the queue; the notification bell picks up the same events immediately."""
+    try:
+        u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "email": 1, "display_name": 1, "email_notifications": 1, "notify_matches": 1, "notify_messages": 1, "notify_trades": 1})
+        if not u or not u.get("email"):
+            return
+        if u.get("email_notifications") is False:
+            return
+        # Per-category user preference gates
+        cat_map = {
+            "match": "notify_matches",
+            "direct_message": "notify_messages", "trade_message": "notify_messages",
+            "trade_proposal": "notify_trades", "trade_update": "notify_trades",
+            "trade_completed": "notify_trades", "meetup_planned": "notify_trades",
+        }
+        pref_key = cat_map.get(kind)
+        if pref_key and u.get(pref_key) is False:
+            return
+        await db.email_queue.insert_one({
+            "id": new_id(),
+            "user_id": user_id,
+            "to_email": u["email"],
+            "to_name": u.get("display_name", ""),
+            "kind": kind,
+            "subject": subject,
+            "data": data or {},
+            "status": "pending",
+            "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.error(f"queue_email failed: {e}")
+
+async def _should_notify(user_id: str, kind: str) -> bool:
+    """Check user's in-app notification preferences. Defaults to True when field is unset."""
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1, "notify_matches": 1, "notify_messages": 1, "notify_trades": 1})
+    if u is None:
+        return False
+    cat_map = {
+        "match": "notify_matches",
+        "message": "notify_messages",
+        "trade_proposal": "notify_trades", "trade": "notify_trades",
+        "meetup": "notify_trades", "rating_request": "notify_trades",
+        "referral_verified": None,  # always notify
+    }
+    pref_key = cat_map.get(kind)
+    if pref_key is not None and u.get(pref_key) is False:
+        return False
+    return True
+
+async def _add_notification(user_id: str, ntype: str, text: str, **extra):
+    """Insert an in-app notification only if user preferences allow."""
+    if not await _should_notify(user_id, ntype):
+        return
+    doc = {"id": new_id(), "user_id": user_id, "type": ntype, "text": text, "read": False, "created_at": now_iso(), **extra}
+    await db.notifications.insert_one(doc)
+
 # ---- Models ----
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -123,6 +180,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: str
     display_name: str
+    referral_code: Optional[str] = None
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -130,6 +188,8 @@ class LoginIn(BaseModel):
 
 class ProfileUpdate(BaseModel):
     display_name: Optional[str] = None
+    first_name: Optional[str] = None
+    username: Optional[str] = None
     bio: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -138,19 +198,41 @@ class ProfileUpdate(BaseModel):
     approx_lng: Optional[float] = None
     search_radius_miles: Optional[int] = None
     picture: Optional[str] = None
+    # Storefront customization
+    store_name: Optional[str] = None
+    store_tagline: Optional[str] = None
+    banner_photo: Optional[str] = None
+    accent_color: Optional[str] = None
+    # Payment / send-money handles
+    cashapp_tag: Optional[str] = None
+    venmo_tag: Optional[str] = None
+    paypal_link: Optional[str] = None
+    bitcoin_address: Optional[str] = None
+    solana_address: Optional[str] = None
+    ethereum_address: Optional[str] = None
+    accepts_donations: Optional[bool] = None
+    # Notification preferences
+    email_notifications: Optional[bool] = None
+    notify_matches: Optional[bool] = None
+    notify_messages: Optional[bool] = None
+    notify_trades: Optional[bool] = None
 
 class ListingIn(BaseModel):
     kind: str  # 'have' | 'need' | 'service' (case-insensitive, normalized server-side)
-    title: str
+    title: str = Field(min_length=1, max_length=120)
     description: str = ""
     category: str
     condition: Optional[str] = None
     quantity: Optional[str] = None
     photos: List[str] = []
-    wants: List[str] = []  # For HAVE: what they want in exchange
+    wants: List[str] = []
     tags: List[str] = []
     urgency: Optional[str] = "normal"
     is_active: bool = True
+    # Shipping
+    ships: bool = False
+    shipping_fee: Optional[str] = None
+    shipping_notes: Optional[str] = None
 
 class ListingOut(ListingIn):
     listing_id: str
@@ -171,7 +253,7 @@ class TradeProposalIn(BaseModel):
     message: Optional[str] = ""
 
 class TradeMessageIn(BaseModel):
-    text: str
+    text: str = Field(min_length=1)
 
 class MeetupIn(BaseModel):
     location_name: str
@@ -206,7 +288,11 @@ async def get_current_user(authorization: Optional[str] = Header(None), session_
         user_id = payload.get("sub")
         user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
         if user:
+            if user.get("role") in ("deleted", "suspended"):
+                raise HTTPException(401, "Account disabled")
             return user
+    except HTTPException:
+        raise
     except Exception:
         pass
 
@@ -221,13 +307,32 @@ async def get_current_user(authorization: Optional[str] = Header(None), session_
         if expires_at and expires_at > datetime.now(timezone.utc):
             user = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0, "password_hash": 0})
             if user:
+                if user.get("role") in ("deleted", "suspended"):
+                    raise HTTPException(401, "Account disabled")
                 return user
     raise HTTPException(401, "Invalid or expired session")
+
+async def get_optional_user(authorization: Optional[str] = Header(None), session_token: Optional[str] = Cookie(None)) -> Optional[dict]:
+    """Same as get_current_user but returns None instead of raising when unauthenticated."""
+    try:
+        return await get_current_user(authorization, session_token)
+    except HTTPException:
+        return None
 
 async def get_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     return user
+
+async def _generate_username(seed: str) -> str:
+    """Generate a unique, anon-friendly username from a seed (email/name)."""
+    import re, random
+    base = re.sub(r"[^a-z0-9]", "", (seed or "trader").lower())[:12] or "trader"
+    for _ in range(10):
+        candidate = f"{base}{random.randint(100, 9999)}"
+        if not await db.users.find_one({"username": candidate}):
+            return candidate
+    return f"trader{uuid.uuid4().hex[:6]}"
 
 # ---- Auth Routes ----
 @api.post("/auth/signup")
@@ -236,10 +341,21 @@ async def signup(inp: SignupIn):
     if existing:
         raise HTTPException(400, "Email already registered")
     user_id = f"user_{uuid.uuid4().hex[:12]}"
+    referral_code = uuid.uuid4().hex[:8].upper()
+    # Auto-generate unique @username from the display name or email local-part
+    username = await _generate_username(inp.display_name or inp.email.split("@")[0])
+    # link referrer if provided
+    referred_by = None
+    if inp.referral_code:
+        ref = await db.users.find_one({"referral_code": inp.referral_code.upper()}, {"_id": 0})
+        if ref:
+            referred_by = ref["user_id"]
     doc = {
         "user_id": user_id,
         "email": inp.email.lower(),
         "display_name": inp.display_name,
+        "username": username,
+        "first_name": (inp.display_name or "").split(" ")[0][:40] or None,
         "password_hash": bcrypt.hashpw(inp.password.encode(), bcrypt.gensalt()).decode(),
         "auth_provider": "email",
         "email_verified": False,
@@ -253,6 +369,13 @@ async def signup(inp: SignupIn):
         "successful_trades": 0,
         "ratings_count": 0,
         "role": "user",
+        "referral_code": referral_code,
+        "referred_by": referred_by,
+        "verified_referral": False,
+        "email_notifications": True,
+        "notify_matches": True,
+        "notify_messages": True,
+        "notify_trades": True,
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
@@ -287,10 +410,13 @@ async def google_session(response: Response, x_session_id: str = Header(..., ali
         await db.users.update_one({"user_id": user_id}, {"$set": {"picture": data.get("picture"), "display_name": data.get("name") or existing.get("display_name")}})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
+        username = await _generate_username(data.get("name") or email.split("@")[0])
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "display_name": data.get("name", email.split("@")[0]),
+            "username": username,
+            "first_name": (data.get("name") or "").split(" ")[0][:40] or None,
             "picture": data.get("picture"),
             "auth_provider": "google",
             "email_verified": True,
@@ -303,6 +429,13 @@ async def google_session(response: Response, x_session_id: str = Header(..., ali
             "successful_trades": 0,
             "ratings_count": 0,
             "role": "user",
+            "referral_code": uuid.uuid4().hex[:8].upper(),
+            "referred_by": None,
+            "verified_referral": False,
+            "email_notifications": True,
+            "notify_matches": True,
+            "notify_messages": True,
+            "notify_trades": True,
             "created_at": now_iso(),
         })
     session_token = data["session_token"]
@@ -329,16 +462,40 @@ async def me(user: dict = Depends(get_current_user)):
 @api.patch("/profile")
 async def update_profile(inp: ProfileUpdate, user: dict = Depends(get_current_user)):
     update = {k: v for k, v in inp.model_dump().items() if v is not None}
+    # Username validation + uniqueness
+    if "username" in update:
+        import re
+        uname = update["username"].lower().strip()
+        if not re.match(r"^[a-z0-9_]{3,20}$", uname):
+            raise HTTPException(422, "Username must be 3-20 chars: lowercase, numbers, underscore")
+        clash = await db.users.find_one({"username": uname, "user_id": {"$ne": user["user_id"]}}, {"_id": 0, "user_id": 1})
+        if clash:
+            raise HTTPException(409, "Username already taken")
+        update["username"] = uname
     if update:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
     u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
     return u
 
 @api.get("/users/{user_id}")
-async def get_user(user_id: str, _: dict = Depends(get_current_user)):
-    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0, "email": 0, "approx_lat": 0, "approx_lng": 0})
+async def get_user(user_id: str, viewer: Optional[dict] = Depends(get_optional_user)):
+    # Whitelist public fields to avoid leaking referral_code, referred_by, role, email etc.
+    projection = {
+        "_id": 0,
+        "user_id": 1, "display_name": 1, "first_name": 1, "username": 1,
+        "picture": 1, "bio": 1, "city": 1, "state": 1, "country": 1,
+        "reputation_score": 1, "successful_trades": 1, "ratings_count": 1,
+        "verified_referral": 1, "email_verified": 1, "phone_verified": 1,
+        "store_name": 1, "store_tagline": 1, "banner_photo": 1, "accent_color": 1,
+        "cashapp_tag": 1, "venmo_tag": 1, "paypal_link": 1,
+        "bitcoin_address": 1, "solana_address": 1, "ethereum_address": 1,
+        "accepts_donations": 1, "created_at": 1,
+    }
+    u = await db.users.find_one({"user_id": user_id}, projection)
     if not u:
         raise HTTPException(404, "User not found")
+    listings = await db.listings.find({"user_id": user_id, "is_active": True}, {"_id": 0}).sort("created_at", -1).limit(60).to_list(60)
+    u["listings"] = listings
     return u
 
 # ---- Uploads ----
@@ -393,6 +550,14 @@ async def enrich_listing(doc: dict, viewer: Optional[dict] = None) -> dict:
 
 @api.post("/listings")
 async def create_listing(inp: ListingIn, user: dict = Depends(get_current_user)):
+    # Anti-spam rate limit: max 20 listings per user per rolling 24h
+    yesterday_iso = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    recent_count = await db.listings.count_documents({
+        "user_id": user["user_id"],
+        "created_at": {"$gte": yesterday_iso},
+    })
+    if recent_count >= 20:
+        raise HTTPException(429, "Daily listing limit reached (20/day). Please try again tomorrow.")
     data = inp.model_dump()
     data["kind"] = (data.get("kind") or "have").lower()
     if data["kind"] not in ("have", "need", "service"):
@@ -405,15 +570,20 @@ async def create_listing(inp: ListingIn, user: dict = Depends(get_current_user))
 
 @api.get("/listings")
 async def list_listings(kind: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
-                        radius: Optional[int] = None, mine: bool = False, user: dict = Depends(get_current_user)):
+                        radius: Optional[int] = None, mine: bool = False,
+                        verified_only: bool = False, has_photos: bool = False,
+                        sort: str = "recent",
+                        user: Optional[dict] = Depends(get_optional_user)):
     query = {"is_active": True}
     if kind:
         query["kind"] = kind.lower()
     if category:
         query["category"] = category
     if mine:
+        if not user:
+            raise HTTPException(401, "Login required to view your listings")
         query["user_id"] = user["user_id"]
-    else:
+    elif user:
         # exclude own listings + blocked users
         blocked = await db.blocks.find({"$or": [{"blocker": user["user_id"]}, {"blocked": user["user_id"]}]}).to_list(1000)
         blocked_ids = set()
@@ -422,12 +592,21 @@ async def list_listings(kind: Optional[str] = None, category: Optional[str] = No
         query["user_id"] = {"$nin": list(blocked_ids) + [user["user_id"]]} if blocked_ids else {"$ne": user["user_id"]}
     if q:
         query["$or"] = [{"title": {"$regex": q, "$options": "i"}}, {"description": {"$regex": q, "$options": "i"}}, {"tags": {"$regex": q, "$options": "i"}}]
-    docs = await db.listings.find(query, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
+    if has_photos:
+        query["photos.0"] = {"$exists": True}
+    docs = await db.listings.find(query, {"_id": 0}).sort("created_at", -1).limit(400).to_list(400)
     enriched = [await enrich_listing(d, user) for d in docs]
-    # radius filter
-    if radius and user.get("approx_lat"):
+    if verified_only:
+        enriched = [e for e in enriched if e.get("user_reputation", 0) > 0 or e.get("user_trades", 0) > 0]
+    if radius and user and user.get("approx_lat"):
         enriched = [e for e in enriched if e.get("distance_miles") is None or e["distance_miles"] <= radius]
-    return enriched
+    # sorting
+    if sort == "closest":
+        enriched.sort(key=lambda e: (e.get("distance_miles") if e.get("distance_miles") is not None else 9999))
+    elif sort == "reputation":
+        enriched.sort(key=lambda e: -(e.get("user_reputation") or 0))
+    # else 'recent' — already sorted by created_at desc
+    return enriched[:200]
 
 @api.get("/listings/{listing_id}")
 async def get_listing(listing_id: str, user: dict = Depends(get_current_user)):
@@ -566,10 +745,8 @@ async def propose_trade(inp: TradeProposalIn, user: dict = Depends(get_current_u
         await db.trade_messages.insert_one({
             "id": new_id(), "trade_id": tid, "user_id": user["user_id"], "text": inp.message, "created_at": now_iso()
         })
-    await db.notifications.insert_one({
-        "id": new_id(), "user_id": inp.to_user_id, "type": "trade_proposal", "trade_id": tid,
-        "text": f"{user['display_name']} proposed a trade", "read": False, "created_at": now_iso()
-    })
+    await _add_notification(inp.to_user_id, "trade_proposal", f"{user['display_name']} proposed a trade: {my_l['title']} ↔ {their_l['title']}", trade_id=tid)
+    await _queue_email(inp.to_user_id, "trade_proposal", f"{user['display_name']} sent you a trade proposal", {"trade_id": tid, "my_title": my_l['title'], "their_title": their_l['title']})
     doc.pop("_id", None)
     return doc
 
@@ -602,26 +779,58 @@ async def trade_action(trade_id: str, action: str = Query(...), user: dict = Dep
         raise HTTPException(404, "Not found")
     if user["user_id"] not in (t["proposer_id"], t["recipient_id"]):
         raise HTTPException(403)
+    other_id = t["recipient_id"] if user["user_id"] == t["proposer_id"] else t["proposer_id"]
     updates = {"updated_at": now_iso()}
+    notif_text = None
+    notif_type = "trade"
     if action == "accept" and user["user_id"] == t["recipient_id"] and t["status"] == "proposed":
         updates["status"] = "accepted"
+        notif_text = f"{user['display_name']} accepted your trade proposal!"
     elif action == "decline" and user["user_id"] == t["recipient_id"] and t["status"] == "proposed":
         updates["status"] = "declined"
+        notif_text = f"{user['display_name']} declined your trade proposal."
     elif action == "cancel":
         updates["status"] = "cancelled"
+        notif_text = f"{user['display_name']} cancelled the trade."
     elif action == "complete":
         role = "proposer" if user["user_id"] == t["proposer_id"] else "recipient"
         updates[f"{role}_completed"] = True
-        both = t.get("proposer_completed") or t.get("recipient_completed")
         p_done = updates.get("proposer_completed", t.get("proposer_completed", False))
         r_done = updates.get("recipient_completed", t.get("recipient_completed", False))
         if p_done and r_done:
             updates["status"] = "completed"
-            # bump successful_trades for both
             await db.users.update_one({"user_id": t["proposer_id"]}, {"$inc": {"successful_trades": 1}})
             await db.users.update_one({"user_id": t["recipient_id"]}, {"$inc": {"successful_trades": 1}})
+            # notify both to rate + trade_completed email
+            for uid in (t["proposer_id"], t["recipient_id"]):
+                other_uid = t["recipient_id"] if uid == t["proposer_id"] else t["proposer_id"]
+                other_u = await db.users.find_one({"user_id": other_uid}, {"_id": 0})
+                await _add_notification(uid, "rating_request", f"Trade complete! How did it go with {other_u['display_name']}?", trade_id=trade_id)
+                await _queue_email(uid, "trade_completed", f"Your trade with {other_u['display_name']} is complete", {"trade_id": trade_id})
+            # Referral verification: first trade for a referred user
+            for uid in (t["proposer_id"], t["recipient_id"]):
+                u = await db.users.find_one({"user_id": uid}, {"_id": 0})
+                if u and u.get("referred_by") and not u.get("verified_referral"):
+                    await db.users.update_one({"user_id": uid}, {"$set": {"verified_referral": True}})
+                    await db.users.update_one({"user_id": u["referred_by"]}, {"$set": {"verified_referral": True}})
+                    await db.notifications.insert_one({
+                        "id": new_id(), "user_id": u["referred_by"], "type": "referral_verified",
+                        "text": f"{u['display_name']} completed their first trade — you both earned a Verified badge!",
+                        "read": False, "created_at": now_iso()
+                    })
+                    await db.notifications.insert_one({
+                        "id": new_id(), "user_id": uid, "type": "referral_verified",
+                        "text": "You completed your first trade! You've earned a Verified badge.",
+                        "read": False, "created_at": now_iso()
+                    })
+        else:
+            notif_text = f"{user['display_name']} marked the trade complete on their side — confirm from your side to finish."
     else:
         raise HTTPException(400, f"Invalid action or state: {action}")
+    if notif_text:
+        await _add_notification(other_id, notif_type, notif_text, trade_id=trade_id)
+        # queue email (fire-and-forget; actual delivery requires provider key)
+        await _queue_email(other_id, "trade_update", notif_text, {"trade_id": trade_id})
     await db.trades.update_one({"trade_id": trade_id}, {"$set": updates})
     return await get_trade(trade_id, user)
 
@@ -635,6 +844,9 @@ async def set_meetup(trade_id: str, inp: MeetupIn, user: dict = Depends(get_curr
     if t["status"] not in ("accepted", "meetup_planned"):
         raise HTTPException(400, "Trade must be accepted first")
     await db.trades.update_one({"trade_id": trade_id}, {"$set": {"meetup": inp.model_dump(), "status": "meetup_planned", "updated_at": now_iso()}})
+    other_id = t["recipient_id"] if user["user_id"] == t["proposer_id"] else t["proposer_id"]
+    await _add_notification(other_id, "meetup", f"Meetup planned: {inp.location_name} on {inp.date} at {inp.time}", trade_id=trade_id)
+    await _queue_email(other_id, "meetup_planned", f"Meetup scheduled with {user['display_name']}", {"trade_id": trade_id, "location": inp.location_name, "date": inp.date, "time": inp.time})
     return await get_trade(trade_id, user)
 
 # ---- Messages ----
@@ -651,10 +863,13 @@ async def post_message(trade_id: str, inp: TradeMessageIn, user: dict = Depends(
     t = await db.trades.find_one({"trade_id": trade_id})
     if not t or user["user_id"] not in (t["proposer_id"], t["recipient_id"]):
         raise HTTPException(403)
-    msg = {"id": new_id(), "trade_id": trade_id, "user_id": user["user_id"], "user_name": user["display_name"], "text": inp.text, "created_at": now_iso()}
+    if not inp.text.strip():
+        raise HTTPException(422, "Message cannot be blank")
+    msg = {"id": new_id(), "trade_id": trade_id, "user_id": user["user_id"], "user_name": user["display_name"], "text": inp.text.strip(), "created_at": now_iso()}
     await db.trade_messages.insert_one(msg)
     other = t["recipient_id"] if t["proposer_id"] == user["user_id"] else t["proposer_id"]
-    await db.notifications.insert_one({"id": new_id(), "user_id": other, "type": "message", "trade_id": trade_id, "text": f"{user['display_name']}: {inp.text[:60]}", "read": False, "created_at": now_iso()})
+    await _add_notification(other, "message", f"{user['display_name']}: {inp.text[:60]}", trade_id=trade_id)
+    await _queue_email(other, "trade_message", f"New message from {user['display_name']}", {"trade_id": trade_id, "preview": inp.text[:140]})
     msg.pop("_id", None)
     return msg
 
@@ -721,10 +936,33 @@ async def mark_read(user: dict = Depends(get_current_user)):
     await db.notifications.update_many({"user_id": user["user_id"], "read": False}, {"$set": {"read": True}})
     return {"ok": True}
 
+@api.delete("/notifications")
+async def clear_notifs(user: dict = Depends(get_current_user)):
+    r = await db.notifications.delete_many({"user_id": user["user_id"]})
+    return {"ok": True, "deleted": r.deleted_count}
+
+@api.delete("/account")
+async def delete_account(user: dict = Depends(get_current_user)):
+    uid = user["user_id"]
+    # Soft: mark listings inactive; remove personal data; keep trade history for other party integrity
+    await db.listings.update_many({"user_id": uid}, {"$set": {"is_active": False}})
+    await db.notifications.delete_many({"user_id": uid})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.users.update_one({"user_id": uid}, {"$set": {
+        "email": f"deleted-{uid}@bartergrid.local",
+        "password_hash": "",
+        "display_name": "[deleted]",
+        "picture": None, "bio": "",
+        "cashapp_tag": None, "venmo_tag": None, "paypal_link": None,
+        "bitcoin_address": None, "solana_address": None, "ethereum_address": None,
+        "role": "deleted",
+    }})
+    return {"ok": True}
+
 # ---- Community stats ----
 @api.get("/community/stats")
-async def community_stats(user: dict = Depends(get_current_user)):
-    total_users = await db.users.count_documents({})
+async def community_stats(user: Optional[dict] = Depends(get_optional_user)):
+    total_users = await db.users.count_documents({"role": {"$ne": "deleted"}})
     total_listings = await db.listings.count_documents({"is_active": True})
     total_haves = await db.listings.count_documents({"kind": "have", "is_active": True})
     total_needs = await db.listings.count_documents({"kind": "need", "is_active": True})
@@ -738,6 +976,74 @@ async def community_stats(user: dict = Depends(get_current_user)):
         "services": total_services,
         "completed_trades": completed_trades,
     }
+
+@api.get("/dashboard/stats")
+async def dashboard_stats(user: dict = Depends(get_current_user)):
+    """Personal dashboard stats — accurate to THIS user's own listings + nearby counts within their radius."""
+    uid = user["user_id"]
+    mine_haves = await db.listings.count_documents({"user_id": uid, "kind": "have", "is_active": True})
+    mine_needs = await db.listings.count_documents({"user_id": uid, "kind": "need", "is_active": True})
+    mine_services = await db.listings.count_documents({"user_id": uid, "kind": "service", "is_active": True})
+    my_trades = await db.trades.count_documents({"$or": [{"proposer_id": uid}, {"recipient_id": uid}], "status": "completed"})
+    active_trades = await db.trades.count_documents({"$or": [{"proposer_id": uid}, {"recipient_id": uid}], "status": {"$nin": ["completed", "cancelled", "declined"]}})
+
+    # nearby counts — only meaningful if user has coordinates
+    nearby_haves = nearby_needs = nearby_services = 0
+    if user.get("approx_lat") is not None and user.get("approx_lng") is not None:
+        radius = user.get("search_radius_miles") or 10
+        cursor = db.listings.find({"user_id": {"$ne": uid}, "is_active": True}, {"_id": 0, "kind": 1, "user_id": 1}).limit(2000)
+        others = await cursor.to_list(2000)
+        # bulk fetch owner coords
+        owner_ids = list({d["user_id"] for d in others})
+        owners = {u["user_id"]: u async for u in db.users.find({"user_id": {"$in": owner_ids}}, {"_id": 0, "user_id": 1, "approx_lat": 1, "approx_lng": 1})}
+        for d in others:
+            o = owners.get(d["user_id"])
+            if not o or o.get("approx_lat") is None:
+                continue
+            dist = haversine_miles(user["approx_lat"], user["approx_lng"], o["approx_lat"], o["approx_lng"])
+            if dist <= radius:
+                if d["kind"] == "have": nearby_haves += 1
+                elif d["kind"] == "need": nearby_needs += 1
+                elif d["kind"] == "service": nearby_services += 1
+
+    return {
+        "my_haves": mine_haves,
+        "my_needs": mine_needs,
+        "my_services": mine_services,
+        "my_completed_trades": my_trades,
+        "my_active_trades": active_trades,
+        "nearby_haves": nearby_haves,
+        "nearby_needs": nearby_needs,
+        "nearby_services": nearby_services,
+        "has_location": user.get("approx_lat") is not None,
+        "radius_miles": user.get("search_radius_miles") or 10,
+    }
+
+@api.get("/search/suggest")
+async def search_suggest(q: str = Query(min_length=1, max_length=64), user: dict = Depends(get_current_user)):
+    """Intelligent lightweight autocomplete: match listing titles/tags (excluding own listings) for the current user's radius."""
+    import re
+    safe_q = re.escape(q)
+    query = {"is_active": True, "user_id": {"$ne": user["user_id"]}, "$or": [
+        {"title": {"$regex": safe_q, "$options": "i"}},
+        {"tags": {"$regex": safe_q, "$options": "i"}},
+    ]}
+    docs = await db.listings.find(query, {"_id": 0, "listing_id": 1, "title": 1, "kind": 1, "category": 1, "user_id": 1, "photos": 1}).limit(60).to_list(60)
+    # enrich with distance for viewer
+    out = []
+    if user.get("approx_lat") is not None:
+        owner_ids = list({d["user_id"] for d in docs})
+        owners = {u["user_id"]: u async for u in db.users.find({"user_id": {"$in": owner_ids}}, {"_id": 0, "user_id": 1, "approx_lat": 1, "approx_lng": 1})}
+        for d in docs:
+            o = owners.get(d["user_id"])
+            dist = None
+            if o and o.get("approx_lat") is not None:
+                dist = round(haversine_miles(user["approx_lat"], user["approx_lng"], o["approx_lat"], o["approx_lng"]), 1)
+            out.append({**d, "distance_miles": dist})
+        out.sort(key=lambda x: (x["distance_miles"] if x["distance_miles"] is not None else 9999))
+    else:
+        out = docs
+    return out[:10]
 
 # ---- Admin ----
 @api.get("/admin/reports")
@@ -757,6 +1063,168 @@ async def admin_suspend(user_id: str, _: dict = Depends(get_admin)):
 async def admin_del_listing(listing_id: str, _: dict = Depends(get_admin)):
     await db.listings.delete_one({"listing_id": listing_id})
     return {"ok": True}
+
+# ---- Referrals ----
+@api.get("/referrals/mine")
+async def my_referrals(user: dict = Depends(get_current_user)):
+    # ensure user has a referral_code
+    code = user.get("referral_code")
+    if not code:
+        code = uuid.uuid4().hex[:8].upper()
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"referral_code": code}})
+    referred = await db.users.find({"referred_by": user["user_id"]}, {"_id": 0, "password_hash": 0, "email": 0}).to_list(200)
+    return {
+        "referral_code": code,
+        "verified_referral": user.get("verified_referral", False),
+        "referred_count": len(referred),
+        "verified_count": sum(1 for r in referred if r.get("verified_referral")),
+        "referred_users": [{"display_name": r.get("display_name"), "city": r.get("city"), "successful_trades": r.get("successful_trades", 0), "verified": r.get("verified_referral", False)} for r in referred],
+    }
+
+@api.get("/referrals/lookup/{code}")
+async def lookup_referral(code: str):
+    """Public endpoint (no auth) for /invite/{code} landing page to show who invited them."""
+    u = await db.users.find_one({"referral_code": code.upper()}, {"_id": 0, "display_name": 1, "city": 1, "picture": 1, "reputation_score": 1, "successful_trades": 1})
+    if not u:
+        raise HTTPException(404, "Invalid invite code")
+    return u
+
+# ---- Direct Messages (user-to-user, independent of trades) ----
+def _conv_id_for(a: str, b: str) -> str:
+    return "conv_" + "_".join(sorted([a, b]))
+
+class DMSendIn(BaseModel):
+    to_user_id: Optional[str] = None
+    text: str = Field(min_length=1)
+    listing_id: Optional[str] = None
+
+@api.get("/conversations")
+async def list_conversations(user: dict = Depends(get_current_user)):
+    convs = await db.conversations.find({"participants": user["user_id"]}, {"_id": 0}).sort("last_message_at", -1).to_list(200)
+    out = []
+    for c in convs:
+        other_id = next((p for p in c["participants"] if p != user["user_id"]), None)
+        other = await db.users.find_one({"user_id": other_id}, {"_id": 0, "password_hash": 0, "email": 0}) if other_id else None
+        unread = await db.dm_messages.count_documents({
+            "conversation_id": c["conversation_id"],
+            "user_id": {"$ne": user["user_id"]},
+            "read_by": {"$ne": user["user_id"]}
+        })
+        out.append({**c, "other_user": other, "unread": unread})
+    return out
+
+@api.get("/conversations/{other_user_id}")
+async def get_or_create_conversation(other_user_id: str, user: dict = Depends(get_current_user)):
+    if other_user_id == user["user_id"]:
+        raise HTTPException(400, "Can't message yourself")
+    # verify not blocked
+    blocked = await db.blocks.find_one({"$or": [
+        {"blocker": user["user_id"], "blocked": other_user_id},
+        {"blocker": other_user_id, "blocked": user["user_id"]},
+    ]})
+    if blocked:
+        raise HTTPException(403, "This user is unavailable")
+    other = await db.users.find_one({"user_id": other_user_id}, {"_id": 0, "password_hash": 0, "email": 0})
+    if not other:
+        raise HTTPException(404, "User not found")
+    cid = _conv_id_for(user["user_id"], other_user_id)
+    existing = await db.conversations.find_one({"conversation_id": cid}, {"_id": 0})
+    if not existing:
+        existing = {
+            "conversation_id": cid,
+            "participants": sorted([user["user_id"], other_user_id]),
+            "created_at": now_iso(),
+            "last_message_at": now_iso(),
+            "last_message": "",
+        }
+        await db.conversations.insert_one(existing)
+        existing.pop("_id", None)
+    msgs = await db.dm_messages.find({"conversation_id": cid}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    # mark as read for current user
+    await db.dm_messages.update_many(
+        {"conversation_id": cid, "user_id": {"$ne": user["user_id"]}, "read_by": {"$ne": user["user_id"]}},
+        {"$addToSet": {"read_by": user["user_id"]}}
+    )
+    return {"conversation": existing, "other_user": other, "messages": msgs}
+
+@api.post("/conversations/{other_user_id}/messages")
+async def send_dm(other_user_id: str, inp: DMSendIn, user: dict = Depends(get_current_user)):
+    if other_user_id == user["user_id"]:
+        raise HTTPException(400, "Can't message yourself")
+    other = await db.users.find_one({"user_id": other_user_id}, {"_id": 0, "user_id": 1})
+    if not other:
+        raise HTTPException(404, "User not found")
+    blocked = await db.blocks.find_one({"$or": [
+        {"blocker": user["user_id"], "blocked": other_user_id},
+        {"blocker": other_user_id, "blocked": user["user_id"]},
+    ]})
+    if blocked:
+        raise HTTPException(403, "This user is unavailable")
+    # Validate text BEFORE upserting the conversation so a 422 does not leave a dirty write
+    text = (inp.text or "").strip()
+    if not text:
+        raise HTTPException(422, "Message cannot be blank")
+    cid = _conv_id_for(user["user_id"], other_user_id)
+    await db.conversations.update_one(
+        {"conversation_id": cid},
+        {"$set": {
+            "conversation_id": cid,
+            "participants": sorted([user["user_id"], other_user_id]),
+            "last_message_at": now_iso(),
+            "last_message": text[:140],
+        }, "$setOnInsert": {"created_at": now_iso()}},
+        upsert=True,
+    )
+    msg = {
+        "id": new_id(),
+        "conversation_id": cid,
+        "user_id": user["user_id"],
+        "user_name": user["display_name"],
+        "text": text,
+        "listing_id": inp.listing_id,
+        "read_by": [user["user_id"]],
+        "created_at": now_iso(),
+    }
+    await db.dm_messages.insert_one(msg)
+    await _add_notification(other_user_id, "message", f"{user['display_name']}: {text[:60]}", conversation_with=user["user_id"])
+    await _queue_email(other_user_id, "direct_message", f"New message from {user['display_name']}", {"preview": text[:140], "from_user": user["user_id"]})
+    msg.pop("_id", None)
+    return msg
+
+# ---- AI Category Suggestion ----
+class AISuggestIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+
+@api.post("/ai/suggest-category")
+async def suggest_category(inp: AISuggestIn, user: dict = Depends(get_current_user)):
+    if not EMERGENT_LLM_KEY:
+        return {"category": "Other"}
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        cats = [
+            "Food & Water", "Tools", "Home", "Garden", "Transportation",
+            "Clothing", "Electronics", "Outdoor & Camping", "Baby & Family",
+            "Books & Education", "Building Materials", "Services & Skills",
+            "Household", "Recreation", "Other"
+        ]
+        sys = (
+            "You classify barter listings into ONE of these categories. "
+            "Respond with ONLY the exact category name, no punctuation, no explanation.\n"
+            "Categories: " + ", ".join(cats)
+        )
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"cat_{user['user_id']}", system_message=sys).with_model("openai", "gpt-5.4")
+        prompt = f"Title: {inp.title}\nDescription: {inp.description or '(none)'}\n\nBest category:"
+        reply = await chat.send_message(UserMessage(text=prompt))
+        # Extract clean category
+        text = (reply or "").strip().strip('"').strip("'")
+        chosen = next((c for c in cats if c.lower() == text.lower()), None)
+        if not chosen:
+            chosen = next((c for c in cats if c.lower() in text.lower()), "Other")
+        return {"category": chosen}
+    except Exception as e:
+        logger.error(f"AI suggest failed: {e}")
+        return {"category": "Other"}
 
 # ---- Root ----
 @api.get("/")
@@ -779,6 +1247,28 @@ async def startup():
         logger.info("Storage ready")
     except Exception as e:
         logger.error(f"Startup storage init failed: {e}")
+    # Indexes for scale
+    try:
+        await db.users.create_index("user_id", unique=True)
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("referral_code")
+        await db.users.create_index("username", unique=True, sparse=True)
+        await db.listings.create_index("listing_id", unique=True)
+        await db.listings.create_index([("user_id", 1), ("kind", 1), ("is_active", 1)])
+        await db.listings.create_index("created_at")
+        await db.listings.create_index("category")
+        await db.trades.create_index("trade_id", unique=True)
+        await db.trades.create_index([("proposer_id", 1), ("recipient_id", 1)])
+        await db.trades.create_index("updated_at")
+        await db.trade_messages.create_index([("trade_id", 1), ("created_at", 1)])
+        await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+        await db.blocks.create_index([("blocker", 1), ("blocked", 1)], unique=True)
+        await db.conversations.create_index("conversation_id", unique=True)
+        await db.conversations.create_index("participants")
+        await db.dm_messages.create_index([("conversation_id", 1), ("created_at", 1)])
+        logger.info("Indexes ready")
+    except Exception as e:
+        logger.error(f"Index creation issue: {e}")
 
 @app.on_event("shutdown")
 async def shutdown():

@@ -35,8 +35,10 @@ export function AuthProvider({ children }) {
   };
 
   const signup = async (email, password, display_name) => {
-    const r = await api.post("/auth/signup", { email, password, display_name });
+    const referral_code = localStorage.getItem("bg_referral_code") || undefined;
+    const r = await api.post("/auth/signup", { email, password, display_name, referral_code });
     localStorage.setItem("bg_token", r.data.token);
+    localStorage.removeItem("bg_referral_code");
     setUser(r.data.user);
     return r.data.user;
   };

@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration-8 backend-only FINAL green-light retest. Wrote /app/backend/tests/test_iteration8.py (11 targeted tests) covering: fresh-signup notification defaults in the user doc, fresh-signup in-app notifications (message, trade_proposal, trade update, meetup, rating_request) with NO PATCH /profile, preference suppression + resume (in-app AND email_queue), GET /api/dashboard/stats (all 10 fields, personal-only counts verified against mongo, completed/active trade counts, nearby counts with Carol/Dan at 37.7749/-122.4194 excluding own listings, 401 without auth), and GET /api/search/suggest (key shape incl. distance_miles, own-listing exclusion, ascending distance sort with a near SF owner vs a far LA owner, case-insensitive match, <=10 cap, 401 without auth, 422 on empty/missing q). All 11 PASS. Full regression suite (backend_test.py + test_iteration4/5/6/7/7_rca + iteration8) = 127/127 PASSED. The iteration-7 CRITICAL _should_notify regression is fully resolved; no new backend defects found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "server.py::_queue_email vs _should_notify",
+        "issue": "Still two divergent cat_map dictionaries with different key vocabularies (email: direct_message/trade_message/trade_update/trade_completed/meetup_planned; in-app: message/trade/meetup/rating_request). Any new notification type added on one side silently bypasses prefs on the other. Recommend one shared NOTIF_PREF_MAP. (Carried over from iteration 7, not blocking.)"
+      },
+      {
+        "endpoint": "GET /api/dashboard/stats",
+        "issue": "nearby_* is computed by loading up to 2000 other-user listings into memory and haversine-ing each (plus a users lookup). Correct today but O(N) per request; will degrade as listings grow. Consider a 2dsphere geo index + $geoNear aggregation."
+      },
+      {
+        "endpoint": "GET /api/search/suggest",
+        "issue": "q is injected directly into $regex, so regex metacharacters from user input (e.g. q='(' ) are interpreted as a pattern. Verified 200 responses for normal input, but re.escape(q) (or $text) is advisable to avoid pathological/ReDoS-ish patterns. Also the 'sorted by distance' guarantee only applies to the first 60 matched docs before the top-10 slice, so a nearer listing beyond doc #60 can be missed."
+      },
+      {
+        "endpoint": "db.users backfill",
+        "issue": "3 of 330 user docs still lack notify_matches/notify_messages/notify_trades (all TEST_i5_* users created minutes before the fixed build started; every one of the 104 signups after the fix has all four flags = True). Harmless because _should_notify now guards on `is False`, so absent fields = opted-in. No action needed beyond awareness."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration8.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup only: unify the two notification-preference category maps into one constant.",
+    "Optional hardening: re.escape(q) in /api/search/suggest and consider geo-indexed aggregation for dashboard nearby counts."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1274 lines — well past the 700-line guidance; split into routers (auth, listings, trades, messaging, notifications, dashboard/search) before it grows further.",
+    "/api/search/suggest matches only the first 60 docs then sorts by distance and slices 10 — the sort is not globally distance-optimal; document this or push distance filtering into the query.",
+    "/api/dashboard/stats does in-Python haversine over up to 2000 listings per call; acceptable now, needs a geo index at scale."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration8.py"],
+  "success_rate": {"backend": "100% (127/127 full suite; 11/11 iteration-8 targeted tests)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Ephemeral TEST_i8_* signups (password Passw0rd!23), TEST_i8 listings (deleted in teardown), trades, DMs and notifications — all created via the public API.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Self-registered via POST /api/auth/signup, password Passw0rd!23 (per /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Backend is fully green at iteration 8 (127 tests). Verified this round: fresh signups get email_notifications/notify_matches/notify_messages/notify_trades = True in the mongo doc; fresh users receive message/trade_proposal/trade/meetup/rating_request in-app notifications with no profile PATCH; notify_messages=false still suppresses both in-app and email_queue and flipping back restores both; /api/dashboard/stats returns all 10 fields with personal-only counts (cross-checked against db.trades and db.listings) and nearby counts excluding the caller's own listings; /api/search/suggest returns <=10 enriched items sorted by ascending distance_miles, excludes own listings, is case-insensitive, 401 unauthenticated, 422 on empty/missing q. Frontend has NOT been tested for these two new endpoints — the dashboard/search-suggest UI wiring is the next logical target.",
+  "rca_of_the_issue": "Iteration-7 root cause (field-limited mongo projection returning {} being treated as 'user not found') is fixed on both fronts: _should_notify projects user_id and guards `u is None`, and signup/google-session now materialise the four notification flags as True. Re-verified via tests/test_iteration7_rca.py and the 12 previously failing notification tests, all now passing."
+}
