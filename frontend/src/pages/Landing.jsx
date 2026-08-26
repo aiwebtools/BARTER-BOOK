@@ -188,16 +188,31 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="border-t border-border py-10 px-6">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground grid place-items-center font-heading font-bold text-sm">B</div>
-            <span className="font-heading font-semibold text-foreground">BarterGrid</span>
-            <span>· Local exchange. Real people.</span>
+        <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-8 pb-8">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground grid place-items-center font-heading font-bold text-sm">B</div>
+              <span className="font-heading font-semibold">BarterGrid</span>
+            </div>
+            <p className="text-sm text-muted-foreground max-w-xs">A free bartering service for the people, by the people. Local exchange, real neighbors, no price tags.</p>
           </div>
-          <div className="flex gap-4">
-            <Link to="/safety" className="hover:text-foreground">Safety</Link>
-            <Link to="/login" className="hover:text-foreground">Sign in</Link>
+          <div className="text-sm space-y-2">
+            <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Explore</div>
+            <Link to="/safety" className="block text-muted-foreground hover:text-foreground">Safety center</Link>
+            <Link to="/login" className="block text-muted-foreground hover:text-foreground">Sign in</Link>
+            <Link to="/signup" className="block text-muted-foreground hover:text-foreground">Create free account</Link>
           </div>
+          <div className="rounded-2xl bg-secondary/10 border border-secondary/40 p-5">
+            <div className="text-xs font-bold uppercase tracking-widest text-secondary mb-2">Bonus for members</div>
+            <div className="font-heading font-semibold mb-1">FREE AI TOOLS</div>
+            <p className="text-xs text-muted-foreground mb-3">A curated directory of creative AI tools — from the same team.</p>
+            <a href="https://aiwebtools.app" target="_blank" rel="noreferrer" className="pill inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-secondary text-secondary-foreground hover:opacity-90 transition-opacity" data-testid="landing-ai-tools">
+              Open aiwebtools.app →
+            </a>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto pt-6 border-t border-border text-center text-xs text-muted-foreground">
+          Made with <span className="text-secondary">♥</span> by <a href="https://aiwebtools.app" target="_blank" rel="noreferrer" className="text-primary font-semibold">aiwebtools.app</a> — a free bartering service for the people, by the people.
         </div>
       </footer>
     </div>

@@ -1,6 +1,7 @@
 import { Outlet, Navigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import TopNav, { BottomNav } from "@/components/TopNav";
+import AppFooter from "@/components/AppFooter";
 
 export default function AppLayout() {
   const { user, loading } = useAuth();
@@ -8,11 +9,12 @@ export default function AppLayout() {
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       <TopNav />
-      <main>
+      <main className="flex-1">
         <Outlet />
       </main>
+      <AppFooter />
       <BottomNav />
     </div>
   );

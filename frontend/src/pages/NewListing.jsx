@@ -29,8 +29,12 @@ export default function NewListing() {
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [ships, setShips] = useState(false);
-  const [shippingFee, setShippingFee] = useState("");
+  const [shipping_fee, setShippingFee] = useState("");
   const [shippingNotes, setShippingNotes] = useState("");
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState("");
+  // legacy alias
+  const shippingFee = shipping_fee;
 
   const upload = async (file) => {
     setUploading(true);
@@ -64,7 +68,7 @@ export default function NewListing() {
         condition: kind === "have" ? condition : null,
         quantity: quantity || null,
         wants: kind === "have" ? wants : [],
-        photos, tags: [],
+        photos, tags,
         ships, shipping_fee: ships ? (shippingFee || null) : null,
         shipping_notes: ships ? (shippingNotes || null) : null,
       });
@@ -136,12 +140,30 @@ export default function NewListing() {
             </label>
             {ships && (
               <div className="mt-3 grid sm:grid-cols-2 gap-3">
-                <Input placeholder="Shipping fee (e.g. $12 or trade extra)" value={shippingFee} onChange={(e) => setShippingFee(e.target.value)} className="h-11 rounded-xl" data-testid="listing-shipping-fee" />
+                <Input placeholder="Shipping fee (e.g. $12 or trade extra)" value={shipping_fee} onChange={(e) => setShippingFee(e.target.value)} className="h-11 rounded-xl" data-testid="listing-shipping-fee" />
                 <Input placeholder="Notes (e.g. USPS, up to 5 lbs)" value={shippingNotes} onChange={(e) => setShippingNotes(e.target.value)} className="h-11 rounded-xl" data-testid="listing-shipping-notes" />
               </div>
             )}
           </div>
         )}
+
+        <div>
+          <Label>Tags <span className="text-xs text-muted-foreground font-normal">(help odd-ball items get found — e.g. heirloom, seeds, genetics, vintage)</span></Label>
+          <div className="flex gap-2 mt-1">
+            <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Add a tag & press Enter" className="h-12 rounded-xl" data-testid="listing-tag-input" onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); const v = tagInput.trim().toLowerCase().replace(/^#/, ""); if (v && !tags.includes(v)) { setTags([...tags, v].slice(0, 12)); setTagInput(""); } } }} />
+            <Button type="button" variant="outline" className="rounded-full h-12" onClick={() => { const v = tagInput.trim().toLowerCase().replace(/^#/, ""); if (v && !tags.includes(v)) { setTags([...tags, v].slice(0, 12)); setTagInput(""); } }} data-testid="listing-tag-add">Add</Button>
+          </div>
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3" data-testid="listing-tag-list">
+              {tags.map((t, i) => (
+                <span key={t} className="pill px-3 py-1 bg-muted text-sm inline-flex items-center gap-1">
+                  #{t}
+                  <button type="button" onClick={() => setTags(tags.filter((_, j) => j !== i))} className="hover:text-destructive" aria-label={`Remove tag ${t}`}><X size={14} /></button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
         {kind === "have" && (
           <div>

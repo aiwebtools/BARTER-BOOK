@@ -6,7 +6,6 @@ import ListingCard from "@/components/ListingCard";
 import SmartSearch from "@/components/SmartSearch";
 import { Button } from "@/components/ui/button";
 import { Handshake, ListPlus, Sparkle, MapPinLine, Users, ArrowsClockwise, Package, ListChecks, Wrench } from "@phosphor-icons/react";
-
 export default function Dashboard() {
   const { user } = useAuth();
   const nav = useNavigate();
@@ -132,6 +131,23 @@ export default function Dashboard() {
           </div>
         )}
       </Section>
+
+      {/* AI Tools Bonus Card */}
+      <section className="mb-4">
+        <div className="rounded-2xl bg-gradient-to-br from-secondary/15 to-primary/10 border border-secondary/30 p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-5" data-testid="dashboard-ai-tools">
+          <div className="w-14 h-14 rounded-2xl bg-secondary/20 border border-secondary/40 grid place-items-center shrink-0">
+            <Sparkle size={26} weight="fill" className="text-secondary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold uppercase tracking-widest text-secondary mb-1">Bonus for BarterGrid members</div>
+            <h3 className="font-heading text-xl sm:text-2xl font-bold">Free AI Tools Creative Directory</h3>
+            <p className="text-sm text-muted-foreground mt-1">A curated directory of creative AI tools you can use free — from the same team that built BarterGrid.</p>
+          </div>
+          <a href="https://aiwebtools.app" target="_blank" rel="noreferrer" className="pill px-5 py-3 text-sm font-bold bg-secondary text-secondary-foreground hover:opacity-90 transition-opacity shrink-0 shine" data-testid="dashboard-ai-tools-btn">
+            Open aiwebtools.app →
+          </a>
+        </div>
+      </section>
     </div>
   );
 }

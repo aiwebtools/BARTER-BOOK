@@ -36,6 +36,13 @@ export default function ListingCard({ listing, action }) {
               ))}
             </div>
           )}
+          {listing.tags?.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {listing.tags.slice(0, 4).map((t) => (
+                <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">#{t}</span>
+              ))}
+            </div>
+          )}
           <div className="mt-2 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
             <span className="truncate">{listing.user_display_name} · {listing.user_city || "Nearby"}</span>
             <span className="flex items-center gap-1"><Star size={14} weight="fill" className="text-secondary" /> {(listing.user_reputation || 0).toFixed(1)} · {listing.user_trades || 0} trades</span>
