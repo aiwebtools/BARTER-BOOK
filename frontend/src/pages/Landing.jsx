@@ -10,11 +10,14 @@ const examples = [
 ];
 
 const faqs = [
-  { q: "Do I need money to use BarterGrid?", a: "No. BarterGrid is a barter network. You trade what you have for what you need — no price tags required." },
-  { q: "How does matching work?", a: "Post what you have and what you need. We surface nearby people whose have/need pairs line up with yours." },
-  { q: "How do I stay safe?", a: "Meet in public locations, keep chat inside the app, verify listings, and report anything suspicious. See our Safety Center." },
-  { q: "Can I trade services?", a: "Yes — post 'I CAN DO' listings for skills like tutoring, repair, or gardening." },
-  { q: "What items are prohibited?", a: "Weapons, illegal goods, stolen property, and fraudulent items. See Community Rules." },
+  { q: "What is this exactly?", a: "BarterGrid is a bulletin board for trading without money. You list what you have, list what you need, and it connects you with a neighbor who has the opposite." },
+  { q: "Do I need money to use it?", a: "No. There are no fees, no premium tier, no ads, no price tags. Two people agree on a swap and meet up." },
+  { q: "Why does this exist?", a: "Because supply chains, banks, and prices can all fail — sometimes for a week, sometimes longer. If that ever happens, communities that already know how to trade will be fine. This is a tool for that, whether you use it every day or you're just keeping it in your back pocket." },
+  { q: "How does matching work?", a: "You mark items as HAVE, NEED, or CAN DO. We surface people whose HAVE lines up with your NEED and vice versa. Nothing fancy — clear labels and real distances." },
+  { q: "Is it only for emergencies?", a: "No. Everyday use is the point. Tools, seeds, rides, tutoring, meal help, an extra deep-freeze — anything you'd normally sell, gift, or buy." },
+  { q: "How do I stay safe?", a: "Meet in public. Never share your home address. Read the Safety Center. BarterGrid can't guarantee any exchange — it just makes it easier to find one." },
+  { q: "Can I trade services?", a: "Yes. Skills count. Post 'I CAN DO' listings for things like repair, tutoring, moving help, gardening, or cooking." },
+  { q: "What items aren't allowed?", a: "No weapons, illegal drugs, stolen goods, or counterfeits. See Community Rules." },
 ];
 
 export default function Landing() {
@@ -42,24 +45,26 @@ export default function Landing() {
         <div className="relative max-w-7xl mx-auto px-6 py-24 lg:py-32 grid lg:grid-cols-2 gap-16 items-center">
           <div className="space-y-8">
             <span className="inline-flex items-center gap-2 pill px-4 py-1.5 bg-card border border-border text-xs font-semibold tracking-widest uppercase">
-              <span className="w-2 h-2 rounded-full bg-primary pulse-connect" /> Free · No fees · Community-owned
+              <span className="w-2 h-2 rounded-full bg-primary pulse-connect" /> Free · No fees · No ads
             </span>
             <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
-              Everything you need is already<br />in your <span className="text-primary">neighborhood.</span>
+              A place to <span className="text-primary">trade</span><br />without money.
             </h1>
             <p className="text-lg text-muted-foreground max-w-xl leading-relaxed">
-              BarterGrid is the free local trading network. Post what you have, tell us what you need, and we'll match you with real neighbors — no prices, no listings fees, no middleman.
-              Trade tools, food, skills, rides, garden goods, help around the house — anything.
+              BarterGrid is a simple tool for swapping goods, skills and help with your neighbors. Post what you have. Post what you need. Meet up. Trade.
+            </p>
+            <p className="text-base text-muted-foreground max-w-xl leading-relaxed">
+              Money and supply chains don't always work. We may have to go back to bartering one day — maybe for a week, maybe longer. This app is here for that day, and for every ordinary day in between.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button size="lg" className="rounded-full h-12 px-8 shine" onClick={() => nav("/signup")} data-testid="hero-cta">
-                Join free — takes 30 seconds
+                Create a free account
               </Button>
               <Button size="lg" variant="outline" className="rounded-full h-12 px-8" onClick={() => nav("/discover")} data-testid="hero-explore">
                 Browse listings
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">3,200+ neighbors already trading · No credit card ever required.</p>
+            <p className="text-xs text-muted-foreground">Nothing to buy. No credit card. No hidden tier.</p>
           </div>
 
           {/* Visual: photo + connected nodes */}
@@ -74,16 +79,16 @@ export default function Landing() {
               />
               <div className="p-6">
                 <div className="grid grid-cols-3 gap-3 items-center">
-                  <NodeCard kind="have" title="Water Filter" name="Maya" />
+                  <NodeCard kind="have" title="Water Filter" name="You" />
                   <div className="flex flex-col items-center gap-1">
                     <ArrowsClockwise size={36} weight="duotone" className="text-primary pulse-connect" />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">Match</span>
                   </div>
-                  <NodeCard kind="need" title="Bike Lock" name="Jordan" />
+                  <NodeCard kind="need" title="Bike Lock" name="Neighbor" />
                 </div>
                 <div className="mt-6 pt-4 border-t border-border grid grid-cols-2 gap-4">
-                  <StatMini icon={Users} n="Free forever" label="No fees, no premium walls" />
-                  <StatMini icon={Handshake} n="Real trades" label="Real neighbors, real value" />
+                  <StatMini icon={Users} n="Free" label="Always. No fees, no ads." />
+                  <StatMini icon={Handshake} n="Local" label="Trade in your radius." />
                 </div>
               </div>
             </div>
@@ -144,9 +149,9 @@ export default function Landing() {
       {/* Trust */}
       <section className="max-w-7xl mx-auto px-6 py-24 grid md:grid-cols-3 gap-6">
         {[
-          { icon: ShieldCheck, title: "Safe Meetups", desc: "Meet at public libraries, community centers, or police exchange zones. Never share your home address." },
-          { icon: Star, title: "Real Reputation", desc: "Every completed trade builds trust. Ratings, verification badges, and trade counts — all visible." },
-          { icon: GitBranch, title: "Trade Chains", desc: "When A→B→C→A adds up, we surface multi-party trades. Coordination made simple." },
+          { icon: ShieldCheck, title: "Meet somewhere public", desc: "The app suggests libraries, community centers, and public parking. Never share your home address." },
+          { icon: Star, title: "Reputation is earned", desc: "Ratings and completed-trade counts show up next to a name. Nothing fake, no filters." },
+          { icon: GitBranch, title: "Three-way trades", desc: "A→B→C→A works too. When two people don't have exactly what each other needs, sometimes a third person closes the loop." },
         ].map((f, i) => (
           <div key={i} className="rounded-2xl border border-border p-8 bg-card card-hover">
             <f.icon size={36} weight="duotone" className="text-primary mb-4" />
@@ -179,8 +184,8 @@ export default function Landing() {
 
       {/* CTA */}
       <section className="max-w-5xl mx-auto px-6 py-24 text-center">
-        <h2 className="font-heading text-3xl sm:text-5xl font-bold mb-6">Your community has what you need.</h2>
-        <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">Join BarterGrid and start trading with neighbors today.</p>
+        <h2 className="font-heading text-3xl sm:text-5xl font-bold mb-6">Try it once. Keep it forever.</h2>
+        <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">Make an account, post one thing you'd swap, and see who's around. That's it.</p>
         <Button size="lg" className="rounded-full h-14 px-10 text-base" onClick={() => nav("/signup")} data-testid="footer-cta">
           Create your free account
         </Button>

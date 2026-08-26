@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ListingCard from "@/components/ListingCard";
+import ShareButtons from "@/components/ShareButtons";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { MapPinLine, Star, ShieldCheck, CheckCircle, Storefront, ChatCircleText, CurrencyDollar, Copy, CurrencyBtc, Wallet, Prohibit, Flag } from "@phosphor-icons/react";
@@ -113,6 +114,16 @@ export default function PublicProfile() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Share this storefront */}
+          <div className="mt-6 pt-6 border-t border-border">
+            <ShareButtons
+              url={typeof window !== "undefined" ? window.location.href : ""}
+              title={`${u.store_name || u.display_name}'s BarterGrid storefront`}
+              text={`Check out ${u.store_name || u.display_name} on BarterGrid — free local barter network.`}
+              testid="storefront-share"
+            />
           </div>
         </div>
 

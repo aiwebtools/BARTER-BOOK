@@ -10,6 +10,8 @@ from typing import List, Optional, Literal
 import bcrypt
 import jwt
 import requests
+import resend
+import asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, UploadFile, File, Response, Cookie
 from fastapi.responses import JSONResponse
@@ -26,6 +28,11 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
 JWT_ALG = "HS256"
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "BarterGrid <onboarding@resend.dev>")
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 APP_NAME = "bartergrid"
@@ -97,15 +104,13 @@ def haversine_miles(lat1, lng1, lat2, lng2) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 async def _queue_email(user_id: str, kind: str, subject: str, data: dict = None):
-    """Queue an email for a user event. Delivery requires a provider key (Resend/SendGrid).
-    Until then, entries sit in the queue; the notification bell picks up the same events immediately."""
+    """Queue an email and (if RESEND_API_KEY is set) actually deliver it via Resend, non-blocking."""
     try:
         u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "email": 1, "display_name": 1, "email_notifications": 1, "notify_matches": 1, "notify_messages": 1, "notify_trades": 1})
-        if not u or not u.get("email"):
+        if not u or not u.get("email") or u["email"].endswith("@bartergrid.local"):
             return
         if u.get("email_notifications") is False:
             return
-        # Per-category user preference gates
         cat_map = {
             "match": "notify_matches",
             "direct_message": "notify_messages", "trade_message": "notify_messages",
@@ -115,8 +120,9 @@ async def _queue_email(user_id: str, kind: str, subject: str, data: dict = None)
         pref_key = cat_map.get(kind)
         if pref_key and u.get(pref_key) is False:
             return
+        qid = new_id()
         await db.email_queue.insert_one({
-            "id": new_id(),
+            "id": qid,
             "user_id": user_id,
             "to_email": u["email"],
             "to_name": u.get("display_name", ""),
@@ -126,8 +132,57 @@ async def _queue_email(user_id: str, kind: str, subject: str, data: dict = None)
             "status": "pending",
             "created_at": now_iso(),
         })
+        # Fire real email via Resend if configured
+        if RESEND_API_KEY:
+            asyncio.create_task(_deliver_email(qid, u["email"], u.get("display_name", ""), kind, subject, data or {}))
     except Exception as e:
         logger.error(f"queue_email failed: {e}")
+
+def _render_email_html(kind: str, name: str, subject: str, data: dict) -> str:
+    action_label, action_path = "Open BarterGrid", "/dashboard"
+    if kind in ("trade_proposal", "trade_update", "trade_completed", "meetup_planned", "trade_message") and data.get("trade_id"):
+        action_label, action_path = "View trade", f"/trades/{data['trade_id']}"
+    elif kind == "direct_message" and data.get("from_user"):
+        action_label, action_path = "Reply", f"/messages/{data['from_user']}"
+    action_url = (APP_PUBLIC_URL + action_path) if APP_PUBLIC_URL else action_path
+    preview = data.get("preview") or subject
+    return f"""
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f1512;padding:32px 16px;font-family:Inter,Arial,sans-serif;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#151b18;border:1px solid #23302a;border-radius:20px;overflow:hidden;">
+      <tr><td style="padding:28px 32px 8px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:36px;"><div style="width:32px;height:32px;background:#4de0a8;border-radius:8px;color:#0e1a15;text-align:center;line-height:32px;font-weight:800;font-family:Arial,sans-serif;">B</div></td>
+          <td style="padding-left:10px;color:#e7ecea;font-weight:700;font-size:16px;">BarterGrid</td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="padding:8px 32px 4px 32px;color:#e7ecea;font-size:22px;font-weight:700;line-height:1.25;">{subject}</td></tr>
+      <tr><td style="padding:8px 32px 24px 32px;color:#a7b0ac;font-size:14px;line-height:1.5;">Hi {name or 'there'}, {preview}</td></tr>
+      <tr><td style="padding:0 32px 28px 32px;">
+        <a href="{action_url}" style="display:inline-block;background:#4de0a8;color:#0e1a15;padding:12px 22px;border-radius:999px;font-weight:700;text-decoration:none;font-size:14px;">{action_label} →</a>
+      </td></tr>
+      <tr><td style="padding:0 32px 28px 32px;border-top:1px solid #23302a;">
+        <p style="color:#7d867f;font-size:12px;line-height:1.6;margin:16px 0 0 0;">You're getting this because you're on BarterGrid — a free bartering service for the people, by the people. Manage or turn off email alerts anytime in Settings.</p>
+        <p style="color:#7d867f;font-size:12px;margin:8px 0 0 0;">Made with ♥ by <a href="https://aiwebtools.app" style="color:#4de0a8;text-decoration:none;">aiwebtools.app</a></p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+""".strip()
+
+async def _deliver_email(qid: str, to_email: str, to_name: str, kind: str, subject: str, data: dict):
+    try:
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [to_email],
+            "subject": f"[BarterGrid] {subject}",
+            "html": _render_email_html(kind, to_name, subject, data),
+        }
+        r = await asyncio.to_thread(resend.Emails.send, params)
+        await db.email_queue.update_one({"id": qid}, {"$set": {"status": "sent", "provider_id": r.get("id"), "sent_at": now_iso()}})
+    except Exception as e:
+        logger.error(f"resend send failed for {to_email}: {e}")
+        await db.email_queue.update_one({"id": qid}, {"$set": {"status": "failed", "error": str(e), "failed_at": now_iso()}})
 
 async def _should_notify(user_id: str, kind: str) -> bool:
     """Check user's in-app notification preferences. Defaults to True when field is unset."""

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ListingCard from "@/components/ListingCard";
+import ShareButtons from "@/components/ShareButtons";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Trash, PencilSimple, ArrowLeft } from "@phosphor-icons/react";
@@ -161,11 +162,21 @@ export function ListingDetail() {
                   try { await api.post("/reports", { target_type: "listing", target_id: listing.listing_id, reason }); toast.success("Reported. Our team will review."); }
                   catch { toast.error("Failed"); }
                 }}
-                className="mt-4 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                className="mt-4 text-xs text-muted-foreground hover:text-destructive transition-colors block"
                 data-testid="report-listing"
               >Report this listing</button>
             </>
           )}
+
+          {/* Share this listing */}
+          <div className="mt-6 pt-6 border-t border-border">
+            <ShareButtons
+              url={typeof window !== "undefined" ? window.location.href : ""}
+              title={`${listing.title} — BarterGrid`}
+              text={`${listing.kind === "have" ? "I've got" : listing.kind === "need" ? "Looking for" : "Offering"}: ${listing.title}. Trade for it on BarterGrid — free local barter network.`}
+              testid="listing-share"
+            />
+          </div>
         </div>
       </div>
     </div>
