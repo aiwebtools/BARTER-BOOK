@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
-    try { await api.post("/auth/logout"); } catch { /* ignore */ }
+    try { await api.post("/auth/logout"); } catch (e) { console.warn("[auth] logout call failed", e?.response?.status || e?.message); }
     localStorage.removeItem("bg_token");
     setUser(null);
   };

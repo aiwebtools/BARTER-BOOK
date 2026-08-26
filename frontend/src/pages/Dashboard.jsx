@@ -27,7 +27,9 @@ export default function Dashboard() {
         setMatches(mm.data);
         setTrades(mt.data);
         setStats(st.data);
-      } catch { /* handled globally */ }
+      } catch (e) {
+        console.error("[dashboard] load failed", e?.response?.status || e?.message);
+      }
     })();
   }, []);
 
@@ -83,8 +85,8 @@ export default function Dashboard() {
           <EmptyState title="No matches yet" desc="Post an item and add a need — we'll surface people whose trades line up with yours." action={<Button onClick={() => nav("/new")} className="rounded-full" data-testid="empty-post">Post something</Button>} />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {matches.slice(0, 3).map((m, i) => (
-              <MatchTile key={i} m={m} />
+            {matches.slice(0, 3).map((m) => (
+              <MatchTile key={`${m.my_listing.listing_id}::${m.their_listing.listing_id}`} m={m} />
             ))}
           </div>
         )}

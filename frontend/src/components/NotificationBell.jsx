@@ -19,7 +19,9 @@ export default function NotificationBell() {
     try {
       const r = await api.get("/notifications");
       setItems(r.data);
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.warn("[notif] load failed", e?.response?.status || e?.message);
+    }
   }, []);
 
   useEffect(() => {
@@ -36,7 +38,9 @@ export default function NotificationBell() {
       try {
         await api.post("/notifications/read");
         setItems((it) => it.map((n) => ({ ...n, read: true })));
-      } catch { /* ignore */ }
+      } catch (e) {
+        console.warn("[notif] mark-read failed", e?.response?.status || e?.message);
+      }
     }
   };
 
@@ -65,7 +69,8 @@ export default function NotificationBell() {
                 <button
                   onClick={async () => {
                     if (!window.confirm("Clear all notifications?")) return;
-                    try { await api.delete("/notifications"); setItems([]); } catch { /* ignore */ }
+                    try { await api.delete("/notifications"); setItems([]); }
+                    catch (e) { console.warn("[notif] clear-all failed", e?.response?.status || e?.message); }
                   }}
                   className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                   data-testid="notif-clear-all"

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { ArrowsClockwise, MapPin, Star } from "@phosphor-icons/react";
 
 export default function Matches() {
@@ -22,7 +23,10 @@ export default function Matches() {
         message: `I noticed we might have a match — interested in trading?`,
       });
       nav(`/trades/${r.data.trade_id}`);
-    } catch { /* toast */ }
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Couldn't propose that trade";
+      toast.error(msg);
+    }
   };
 
   return (
@@ -40,8 +44,8 @@ export default function Matches() {
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-5">
-            {matches.map((m, i) => (
-              <div key={i} className="rounded-2xl bg-card border border-border p-6 card-hover" data-testid={`match-${i}`}>
+            {matches.map((m) => (
+              <div key={`${m.my_listing.listing_id}::${m.their_listing.listing_id}`} className="rounded-2xl bg-card border border-border p-6 card-hover" data-testid={`match-${m.my_listing.listing_id}-${m.their_listing.listing_id}`}>
                 <div className="flex items-center justify-between mb-4">
                   <span className="pill px-3 py-1 text-xs font-bold bg-accent text-accent-foreground">{m.label}</span>
                   {m.their_listing.distance_miles != null && <span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin size={14} /> {m.their_listing.distance_miles} mi</span>}
@@ -62,7 +66,7 @@ export default function Matches() {
                     <div className="font-medium">{m.their_listing.user_display_name}</div>
                     <div className="text-xs text-muted-foreground flex items-center gap-1"><Star size={12} weight="fill" className="text-secondary" /> {(m.their_listing.user_reputation || 0).toFixed(1)} · {m.their_listing.user_trades || 0} trades</div>
                   </div>
-                  <Button onClick={() => propose(m)} className="rounded-full" data-testid={`propose-match-${i}`}>Propose trade</Button>
+                  <Button onClick={() => propose(m)} className="rounded-full" data-testid="propose-match">Propose trade</Button>
                 </div>
               </div>
             ))}

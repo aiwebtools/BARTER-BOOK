@@ -12,7 +12,9 @@ export function ReferralPanel() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api.get("/referrals/mine").then((r) => setData(r.data)).catch(() => {});
+    api.get("/referrals/mine")
+      .then((r) => setData(r.data))
+      .catch((e) => console.warn("[referral] load failed", e?.response?.status || e?.message));
   }, []);
 
   if (!data) return null;
@@ -71,8 +73,8 @@ export function ReferralPanel() {
         <div className="mt-5 pt-5 border-t border-border">
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Your neighbors</p>
           <div className="space-y-2">
-            {data.referred_users.map((r, i) => (
-              <div key={i} className="flex items-center justify-between text-sm">
+            {data.referred_users.map((r) => (
+              <div key={`${r.display_name}-${r.city || 'nocity'}`} className="flex items-center justify-between text-sm">
                 <span>{r.display_name} · {r.city || "—"}</span>
                 {r.verified ? (
                   <span className="pill px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground">VERIFIED</span>

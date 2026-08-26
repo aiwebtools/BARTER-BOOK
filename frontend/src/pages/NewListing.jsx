@@ -155,10 +155,10 @@ export default function NewListing() {
           </div>
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-3" data-testid="listing-tag-list">
-              {tags.map((t, i) => (
+              {tags.map((t) => (
                 <span key={t} className="pill px-3 py-1 bg-muted text-sm inline-flex items-center gap-1">
                   #{t}
-                  <button type="button" onClick={() => setTags(tags.filter((_, j) => j !== i))} className="hover:text-destructive" aria-label={`Remove tag ${t}`}><X size={14} /></button>
+                  <button type="button" onClick={() => setTags(tags.filter((x) => x !== t))} className="hover:text-destructive" aria-label={`Remove tag ${t}`}><X size={14} /></button>
                 </span>
               ))}
             </div>
@@ -174,9 +174,9 @@ export default function NewListing() {
             </div>
             {wants.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-3">
-                {wants.map((w, i) => (
-                  <span key={i} className="pill px-3 py-1 bg-muted text-sm inline-flex items-center gap-1">
-                    {w} <button onClick={() => setWants(wants.filter((_, j) => j !== i))} className="hover:text-destructive"><X size={14} /></button>
+                {wants.map((w) => (
+                  <span key={w} className="pill px-3 py-1 bg-muted text-sm inline-flex items-center gap-1">
+                    {w} <button onClick={() => setWants(wants.filter((x) => x !== w))} className="hover:text-destructive"><X size={14} /></button>
                   </span>
                 ))}
               </div>
@@ -187,10 +187,10 @@ export default function NewListing() {
         <div>
           <Label>Photos (optional)</Label>
           <div className="flex flex-wrap gap-3 mt-2">
-            {photos.map((p, i) => (
-              <div key={i} className="relative w-24 h-24 rounded-xl overflow-hidden border border-border">
+            {photos.map((p) => (
+              <div key={p} className="relative w-24 h-24 rounded-xl overflow-hidden border border-border">
                 <img src={p} alt="" className="w-full h-full object-cover" />
-                <button onClick={() => setPhotos(photos.filter((_, j) => j !== i))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-background/90 grid place-items-center"><X size={12} /></button>
+                <button onClick={() => setPhotos(photos.filter((x) => x !== p))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-background/90 grid place-items-center"><X size={12} /></button>
               </div>
             ))}
             <label className="w-24 h-24 rounded-xl border-2 border-dashed border-border grid place-items-center cursor-pointer hover:border-primary transition-colors" data-testid="upload-photo">
