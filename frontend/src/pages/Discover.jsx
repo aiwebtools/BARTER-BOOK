@@ -1,15 +1,17 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import ListingCard from "@/components/ListingCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORIES } from "@/lib/api";
-import { MagnifyingGlass, FunnelSimple } from "@phosphor-icons/react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 
 export default function Discover() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
@@ -27,6 +29,8 @@ export default function Discover() {
     try {
       const r = await api.get(`/listings?${params.toString()}`);
       setItems(r.data);
+    } catch (e) {
+      console.warn("[discover] load failed", e?.response?.status || e?.message);
     } finally { setLoading(false); }
   }, [q, kind, category, radius]);
 
@@ -34,6 +38,18 @@ export default function Discover() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-24 md:pb-8" data-testid="discover-page">
+      {!user && (
+        <div className="mb-6 rounded-2xl bg-primary/10 border border-primary/30 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3" data-testid="guest-banner">
+          <div>
+            <p className="font-heading font-semibold text-lg">Preview mode — you're browsing as a guest.</p>
+            <p className="text-sm text-muted-foreground">Create a free account to message traders, propose swaps, and post your own listings.</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" onClick={() => nav("/login")} className="rounded-full" data-testid="guest-signin">Sign in</Button>
+            <Button onClick={() => nav("/signup")} className="rounded-full shine" data-testid="guest-signup">Sign up free</Button>
+          </div>
+        </div>
+      )}
       <div className="mb-6">
         <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary mb-1">Discover</p>
         <h1 className="font-heading text-3xl sm:text-4xl font-bold">What's nearby right now.</h1>

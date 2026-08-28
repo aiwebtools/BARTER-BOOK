@@ -18,8 +18,8 @@ export default function Safety() {
       <p className="text-muted-foreground mb-8">BarterGrid facilitates connections between people — it doesn't guarantee outcomes. These practical steps help protect everyone.</p>
 
       <div className="grid sm:grid-cols-2 gap-4 mb-10">
-        {tips.map((t, i) => (
-          <div key={i} className="rounded-2xl bg-card border border-border p-6">
+        {tips.map((t) => (
+          <div key={t.title} className="rounded-2xl bg-card border border-border p-6">
             <t.icon size={28} weight="duotone" className="text-primary mb-3" />
             <h3 className="font-heading font-semibold mb-2">{t.title}</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">{t.desc}</p>

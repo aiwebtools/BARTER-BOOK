@@ -25,7 +25,10 @@ export default function ShareButtons({ url, title, text, compact = false, testid
   const nativeShare = async () => {
     if (navigator.share) {
       try { await navigator.share({ title: shareTitle, text: shareText, url: shareUrl }); }
-      catch { /* user cancelled */ }
+      catch (e) {
+        // AbortError is fired when the user cancels — that's fine.
+        if (e?.name !== "AbortError") console.warn("[share] native share failed", e?.message || e);
+      }
     } else { copy(); }
   };
 

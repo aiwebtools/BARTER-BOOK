@@ -272,8 +272,24 @@ class ProfileUpdate(BaseModel):
     notify_messages: Optional[bool] = None
     notify_trades: Optional[bool] = None
 
+CANONICAL_CATEGORIES = [
+    "Food & Water", "Tools", "Home", "Garden", "Transportation", "Clothing",
+    "Electronics", "Outdoor & Camping", "Baby & Family", "Books & Education",
+    "Building Materials", "Services & Skills", "Household", "Recreation", "Other",
+]
+_CANONICAL_CATEGORY_LOOKUP = {c.lower(): c for c in CANONICAL_CATEGORIES}
+
+def normalize_category(raw: Optional[str]) -> str:
+    """Coerce free-form category input to the canonical casing so the community-dashboard
+    breakdown doesn't split into 'home' vs 'Home' duplicate rows. Unknown values fall
+    through as-is so we don't reject legacy data, but new listings will land on the
+    canonical spelling when a case-insensitive match exists."""
+    if not raw:
+        return "Other"
+    return _CANONICAL_CATEGORY_LOOKUP.get(raw.strip().lower(), raw.strip())
+
 class ListingIn(BaseModel):
-    kind: str  # 'have' | 'need' | 'service' (case-insensitive, normalized server-side)
+    kind: str
     title: str = Field(min_length=1, max_length=120)
     description: str = ""
     category: str
@@ -284,10 +300,12 @@ class ListingIn(BaseModel):
     tags: List[str] = []
     urgency: Optional[str] = "normal"
     is_active: bool = True
-    # Shipping
     ships: bool = False
     shipping_fee: Optional[str] = None
     shipping_notes: Optional[str] = None
+    # Emergency Mode — surfaces urgent food/water/shelter needs at the top
+    is_emergency: bool = False
+    emergency_type: Optional[str] = None  # "food" | "water" | "shelter" | "medical" | "other"
 
 class ListingOut(ListingIn):
     listing_id: str
@@ -381,17 +399,28 @@ async def get_admin(user: dict = Depends(get_current_user)) -> dict:
 
 async def _generate_username(seed: str) -> str:
     """Generate a unique, anon-friendly username from a seed (email/name)."""
-    import re, random
+    import re
+    import secrets
     base = re.sub(r"[^a-z0-9]", "", (seed or "trader").lower())[:12] or "trader"
     for _ in range(10):
-        candidate = f"{base}{random.randint(100, 9999)}"
+        candidate = f"{base}{secrets.randbelow(9900) + 100}"
         if not await db.users.find_one({"username": candidate}):
             return candidate
-    return f"trader{uuid.uuid4().hex[:6]}"
+    return f"trader{secrets.token_hex(3)}"
 
 # ---- Auth Routes ----
+def _set_auth_cookie(response: Response, token: str) -> None:
+    """Set the auth JWT as an httpOnly cookie so it isn't reachable to page JS (XSS protection).
+    We keep returning the token in the JSON body too for backward-compat with tests and
+    non-browser clients."""
+    response.set_cookie(
+        "session_token", token,
+        max_age=7 * 24 * 3600,
+        httponly=True, secure=True, samesite="none", path="/",
+    )
+
 @api.post("/auth/signup")
-async def signup(inp: SignupIn):
+async def signup(inp: SignupIn, response: Response):
     existing = await db.users.find_one({"email": inp.email.lower()})
     if existing:
         raise HTTPException(400, "Email already registered")
@@ -435,18 +464,20 @@ async def signup(inp: SignupIn):
     }
     await db.users.insert_one(doc)
     token = make_jwt(user_id)
+    _set_auth_cookie(response, token)
     doc.pop("password_hash", None)
     doc.pop("_id", None)
     return {"token": token, "user": doc}
 
 @api.post("/auth/login")
-async def login(inp: LoginIn):
+async def login(inp: LoginIn, response: Response):
     user = await db.users.find_one({"email": inp.email.lower()})
     if not user or not user.get("password_hash"):
         raise HTTPException(401, "Invalid credentials")
     if not bcrypt.checkpw(inp.password.encode(), user["password_hash"].encode()):
         raise HTTPException(401, "Invalid credentials")
     token = make_jwt(user["user_id"])
+    _set_auth_cookie(response, token)
     user.pop("password_hash", None)
     user.pop("_id", None)
     return {"token": token, "user": user}
@@ -617,6 +648,7 @@ async def create_listing(inp: ListingIn, user: dict = Depends(get_current_user))
     data["kind"] = (data.get("kind") or "have").lower()
     if data["kind"] not in ("have", "need", "service"):
         raise HTTPException(422, "kind must be have|need|service")
+    data["category"] = normalize_category(data.get("category"))
     lid = new_id("lst_")
     doc = {"listing_id": lid, "user_id": user["user_id"], **data, "created_at": now_iso()}
     await db.listings.insert_one(doc)
@@ -633,7 +665,7 @@ async def list_listings(kind: Optional[str] = None, category: Optional[str] = No
     if kind:
         query["kind"] = kind.lower()
     if category:
-        query["category"] = category
+        query["category"] = normalize_category(category)
     if mine:
         if not user:
             raise HTTPException(401, "Login required to view your listings")
@@ -655,12 +687,12 @@ async def list_listings(kind: Optional[str] = None, category: Optional[str] = No
         enriched = [e for e in enriched if e.get("user_reputation", 0) > 0 or e.get("user_trades", 0) > 0]
     if radius and user and user.get("approx_lat"):
         enriched = [e for e in enriched if e.get("distance_miles") is None or e["distance_miles"] <= radius]
-    # sorting
+    # Emergency listings ALWAYS float to the top, regardless of sort mode
+    enriched.sort(key=lambda e: 0 if e.get("is_emergency") else 1)
     if sort == "closest":
-        enriched.sort(key=lambda e: (e.get("distance_miles") if e.get("distance_miles") is not None else 9999))
+        enriched.sort(key=lambda e: (0 if e.get("is_emergency") else 1, e.get("distance_miles") if e.get("distance_miles") is not None else 9999))
     elif sort == "reputation":
-        enriched.sort(key=lambda e: -(e.get("user_reputation") or 0))
-    # else 'recent' — already sorted by created_at desc
+        enriched.sort(key=lambda e: (0 if e.get("is_emergency") else 1, -(e.get("user_reputation") or 0)))
     return enriched[:200]
 
 @api.get("/listings/{listing_id}")
@@ -679,6 +711,7 @@ async def update_listing(listing_id: str, inp: ListingIn, user: dict = Depends(g
         raise HTTPException(403, "Not your listing")
     data = inp.model_dump()
     data["kind"] = (data.get("kind") or "have").lower()
+    data["category"] = normalize_category(data.get("category"))
     await db.listings.update_one({"listing_id": listing_id}, {"$set": data})
     doc = await db.listings.find_one({"listing_id": listing_id}, {"_id": 0})
     return await enrich_listing(doc, user)
@@ -727,17 +760,14 @@ async def get_matches(user: dict = Depends(get_current_user)):
     my_need_terms = set()
     for n in my_needs:
         my_need_terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
-        # also add wants from haves as additional needs
     for h in my_haves:
         for w in h.get("wants", []):
             my_need_terms |= _tokens(w)
 
     matches = []
-    # find other users' listings
     others_haves = await db.listings.find({"user_id": {"$ne": user["user_id"]}, "kind": {"$in": ["have", "service"]}, "is_active": True}, {"_id": 0}).to_list(500)
     others_needs = await db.listings.find({"user_id": {"$ne": user["user_id"]}, "kind": "need", "is_active": True}, {"_id": 0}).to_list(500)
 
-    # group other users' needs
     needs_by_user = {}
     for n in others_needs:
         needs_by_user.setdefault(n["user_id"], []).append(n)
@@ -749,7 +779,6 @@ async def get_matches(user: dict = Depends(get_current_user)):
     for my_have in my_have_all:
         for other_have in others_haves:
             other_uid = other_have["user_id"]
-            # what does other need
             their_need_terms = set()
             for n in needs_by_user.get(other_uid, []):
                 their_need_terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
@@ -771,6 +800,93 @@ async def get_matches(user: dict = Depends(get_current_user)):
                 })
     matches.sort(key=lambda m: -m["score"])
     return matches[:50]
+
+@api.get("/matches/chains")
+async def get_trade_chains(user: dict = Depends(get_current_user)):
+    """Find three-person trade chains: you → B → C → you.
+
+    Chain rule: You HAVE X → user B wants X. B HAVES Y → user C wants Y. C HAVES Z → you want Z.
+    We look for triples of active listings that close the loop through 'wants' tokens.
+    Kept small (<=25 chains) and gated to compatible-radius participants when the current user has coordinates.
+    """
+    uid = user["user_id"]
+    my_haves = await db.listings.find({"user_id": uid, "kind": {"$in": ["have", "service"]}, "is_active": True}, {"_id": 0}).to_list(50)
+    my_needs_docs = await db.listings.find({"user_id": uid, "kind": "need", "is_active": True}, {"_id": 0}).to_list(50)
+    if not my_haves or not my_needs_docs:
+        return []
+    my_need_terms = set()
+    for n in my_needs_docs:
+        my_need_terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
+    for h in my_haves:
+        for w in h.get("wants", []):
+            my_need_terms |= _tokens(w)
+
+    others_haves = await db.listings.find(
+        {"user_id": {"$ne": uid}, "kind": {"$in": ["have", "service"]}, "is_active": True},
+        {"_id": 0},
+    ).to_list(500)
+    others_needs = await db.listings.find(
+        {"user_id": {"$ne": uid}, "kind": "need", "is_active": True},
+        {"_id": 0},
+    ).to_list(500)
+
+    needs_by_user = {}
+    for n in others_needs:
+        needs_by_user.setdefault(n["user_id"], []).append(n)
+    haves_by_user = {}
+    for h in others_haves:
+        haves_by_user.setdefault(h["user_id"], []).append(h)
+
+    def user_need_terms(other_uid: str) -> set:
+        terms = set()
+        for n in needs_by_user.get(other_uid, []):
+            terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
+        for h in haves_by_user.get(other_uid, []):
+            for w in h.get("wants", []):
+                terms |= _tokens(w)
+        return terms
+
+    chains = []
+    seen = set()
+
+    for my_have in my_haves:
+        my_have_tokens = _tokens(my_have["title"] + " " + " ".join(my_have.get("tags", [])))
+        # B is any user whose need-terms overlap my_have (excluding me)
+        for b_have in others_haves:
+            b_uid = b_have["user_id"]
+            if b_uid == uid:
+                continue
+            b_need = user_need_terms(b_uid)
+            if not (my_have_tokens & b_need):
+                continue  # B doesn't want what I have
+            b_have_tokens = _tokens(b_have["title"] + " " + " ".join(b_have.get("tags", [])))
+            # C is any user whose need-terms overlap b_have, and C's have covers my need
+            for c_have in others_haves:
+                c_uid = c_have["user_id"]
+                if c_uid == uid or c_uid == b_uid:
+                    continue
+                c_need = user_need_terms(c_uid)
+                if not (b_have_tokens & c_need):
+                    continue  # C doesn't want what B has
+                c_have_tokens = _tokens(c_have["title"] + " " + " ".join(c_have.get("tags", [])))
+                if not (c_have_tokens & my_need_terms):
+                    continue  # C's have doesn't match my need
+                key = (my_have["listing_id"], b_have["listing_id"], c_have["listing_id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                b_owner = await db.users.find_one({"user_id": b_uid}, {"_id": 0, "password_hash": 0, "email": 0})
+                c_owner = await db.users.find_one({"user_id": c_uid}, {"_id": 0, "password_hash": 0, "email": 0})
+                b_enriched = await enrich_listing(b_have, user)
+                c_enriched = await enrich_listing(c_have, user)
+                chains.append({
+                    "you": {"listing": my_have},
+                    "b": {"listing": b_enriched, "user": {"user_id": b_owner["user_id"], "display_name": b_owner["display_name"], "city": b_owner.get("city"), "reputation_score": b_owner.get("reputation_score", 0.0)}},
+                    "c": {"listing": c_enriched, "user": {"user_id": c_owner["user_id"], "display_name": c_owner["display_name"], "city": c_owner.get("city"), "reputation_score": c_owner.get("reputation_score", 0.0)}},
+                })
+                if len(chains) >= 25:
+                    return chains
+    return chains
 
 # ---- Trades ----
 @api.post("/trades")
@@ -854,6 +970,7 @@ async def trade_action(trade_id: str, action: str = Query(...), user: dict = Dep
         r_done = updates.get("recipient_completed", t.get("recipient_completed", False))
         if p_done and r_done:
             updates["status"] = "completed"
+            updates["completed_at"] = now_iso()
             await db.users.update_one({"user_id": t["proposer_id"]}, {"$inc": {"successful_trades": 1}})
             await db.users.update_one({"user_id": t["recipient_id"]}, {"$inc": {"successful_trades": 1}})
             # notify both to rate + trade_completed email
@@ -1030,6 +1147,76 @@ async def community_stats(user: Optional[dict] = Depends(get_optional_user)):
         "needs": total_needs,
         "services": total_services,
         "completed_trades": completed_trades,
+    }
+
+@api.get("/community/dashboard")
+async def community_dashboard(user: Optional[dict] = Depends(get_optional_user)):
+    """Aggregate view of the whole exchange: top-line stats, category breakdown,
+    active emergency listings, and top skills offered. Public — no auth required."""
+    total_users = await db.users.count_documents({"role": {"$ne": "deleted"}})
+
+    # Fan out kind + emergency + trade counts in parallel
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    have_count, need_count, service_count, emergency_count, completed_trades, recent_completed_30d = await asyncio.gather(
+        db.listings.count_documents({"kind": "have", "is_active": True}),
+        db.listings.count_documents({"kind": "need", "is_active": True}),
+        db.listings.count_documents({"kind": "service", "is_active": True}),
+        db.listings.count_documents({"is_active": True, "is_emergency": True}),
+        db.trades.count_documents({"status": "completed"}),
+        db.trades.count_documents({"status": "completed", "completed_at": {"$gte": thirty_days_ago}}),
+    )
+
+    # Category aggregation — normalize keys so 'home' and 'Home' collapse into one row.
+    pipeline = [
+        {"$match": {"is_active": True}},
+        {"$group": {
+            "_id": {"category": "$category", "kind": "$kind"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    agg = await db.listings.aggregate(pipeline).to_list(1000)
+    by_category_map: dict = {}
+    for row in agg:
+        cat = normalize_category(row["_id"].get("category"))
+        kind = row["_id"].get("kind") or "have"
+        entry = by_category_map.setdefault(cat, {"category": cat, "have": 0, "need": 0, "service": 0, "total": 0})
+        if kind in ("have", "need", "service"):
+            entry[kind] += row["count"]
+        entry["total"] += row["count"]
+    by_category = sorted(by_category_map.values(), key=lambda r: r["total"], reverse=True)
+
+    # Emergency listings — enrich in parallel (was sequential; can hit 12 round-trips)
+    emergency_docs = await db.listings.find(
+        {"is_active": True, "is_emergency": True},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(12).to_list(12)
+    emergency = list(await asyncio.gather(*(enrich_listing(d, user) for d in emergency_docs))) if emergency_docs else []
+
+    # Top skills (service listings — titles as canonical skill names)
+    top_services_docs = await db.listings.find(
+        {"kind": "service", "is_active": True},
+        {"_id": 0, "title": 1},
+    ).sort("created_at", -1).limit(60).to_list(60)
+    seen: set = set()
+    top_services: List[str] = []
+    for d in top_services_docs:
+        t = (d.get("title") or "").strip()
+        key = t.lower()
+        if t and key not in seen:
+            seen.add(key)
+            top_services.append(t)
+        if len(top_services) >= 15:
+            break
+
+    return {
+        "total_users": total_users,
+        "by_kind": {"have": have_count, "need": need_count, "service": service_count},
+        "by_category": by_category,
+        "emergency": emergency,
+        "emergency_count": emergency_count,
+        "completed_trades": completed_trades,
+        "recent_completed_30d": recent_completed_30d,
+        "top_services": top_services,
     }
 
 @api.get("/dashboard/stats")

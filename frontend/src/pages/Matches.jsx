@@ -3,15 +3,19 @@ import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowsClockwise, MapPin, Star } from "@phosphor-icons/react";
+import { ArrowsClockwise, MapPin, Star, GitBranch } from "@phosphor-icons/react";
 
 export default function Matches() {
   const nav = useNavigate();
   const [matches, setMatches] = useState([]);
+  const [chains, setChains] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/matches").then((r) => setMatches(r.data)).finally(() => setLoading(false));
+    Promise.all([
+      api.get("/matches").then((r) => setMatches(r.data)).catch((e) => console.warn("[matches] load failed", e?.response?.status)),
+      api.get("/matches/chains").then((r) => setChains(r.data)).catch((e) => console.warn("[chains] load failed", e?.response?.status)),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const propose = async (m) => {
@@ -36,13 +40,42 @@ export default function Matches() {
       <p className="text-muted-foreground mb-8">These are people whose have/need pairs line up with yours.</p>
 
       {loading ? <div className="text-center py-12 text-muted-foreground">Finding matches…</div> :
-        matches.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-16 text-center">
-            <h3 className="font-heading font-semibold text-xl mb-2">No matches yet</h3>
-            <p className="text-muted-foreground mb-6">Post more items and needs, or expand your search radius.</p>
-            <Button onClick={() => nav("/new")} className="rounded-full">Post something</Button>
-          </div>
-        ) : (
+        <>
+          {chains.length > 0 && (
+            <section className="mb-10" data-testid="chains-section">
+              <div className="flex items-center gap-2 mb-4">
+                <GitBranch size={22} weight="duotone" className="text-secondary" />
+                <h2 className="font-heading text-xl sm:text-2xl font-semibold">Three-person trade chains</h2>
+                <span className="pill px-2 py-0.5 text-[10px] font-bold bg-secondary/20 text-secondary">EXPERIMENTAL</span>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">You don't need a direct match — a neighbor of a neighbor closes the loop.</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                {chains.map((c, i) => (
+                  <div key={`${c.you.listing.listing_id}::${c.b.listing.listing_id}::${c.c.listing.listing_id}`} className="rounded-2xl bg-card border border-border p-5 card-hover" data-testid={`chain-${i}`}>
+                    <div className="text-xs font-bold uppercase tracking-widest text-secondary mb-3">Chain of 3</div>
+                    <div className="space-y-2 text-sm">
+                      <ChainRow label="You give" title={c.you.listing.title} who="→" />
+                      <ChainRow label={c.b.user.display_name + " gives"} title={c.b.listing.title} who="→" city={c.b.user.city} />
+                      <ChainRow label={c.c.user.display_name + " gives"} title={c.c.listing.title} who="↩ back to you" city={c.c.user.city} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">Coordinate with both neighbors — chat with each to plan a swap.</p>
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="outline" className="rounded-full" onClick={() => nav(`/messages/${c.b.user.user_id}`)} data-testid={`chain-${i}-msg-b`}>Message {c.b.user.display_name}</Button>
+                      <Button size="sm" variant="outline" className="rounded-full" onClick={() => nav(`/messages/${c.c.user.user_id}`)} data-testid={`chain-${i}-msg-c`}>Message {c.c.user.display_name}</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {matches.length === 0 && chains.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-16 text-center">
+              <h3 className="font-heading font-semibold text-xl mb-2">No matches yet</h3>
+              <p className="text-muted-foreground mb-6">Post more items and needs, or expand your search radius.</p>
+              <Button onClick={() => nav("/new")} className="rounded-full">Post something</Button>
+            </div>
+          ) : matches.length === 0 ? null : (
           <div className="grid md:grid-cols-2 gap-5">
             {matches.map((m) => (
               <div key={`${m.my_listing.listing_id}::${m.their_listing.listing_id}`} className="rounded-2xl bg-card border border-border p-6 card-hover" data-testid={`match-${m.my_listing.listing_id}-${m.their_listing.listing_id}`}>
@@ -72,6 +105,20 @@ export default function Matches() {
             ))}
           </div>
         )}
+        </>
+      }
+    </div>
+  );
+}
+
+function ChainRow({ label, title, who, city }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}{city ? ` · ${city}` : ""}</div>
+        <div className="font-heading font-semibold truncate">{title}</div>
+      </div>
+      <span className="text-xs text-muted-foreground shrink-0">{who}</span>
     </div>
   );
 }

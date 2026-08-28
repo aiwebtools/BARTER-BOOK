@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import NotificationBell from "@/components/NotificationBell";
-import { House, MagnifyingGlass, ListPlus, Handshake, ChatCircleText, User, SignOut, GridFour, ListChecks, ShieldWarning, EnvelopeSimple, Gear, List, X, Sparkle, ShieldCheck } from "@phosphor-icons/react";
+import { House, MagnifyingGlass, ListPlus, Handshake, ChatCircleText, User, SignOut, GridFour, ListChecks, ShieldWarning, EnvelopeSimple, Gear, List, X, Sparkle, ShieldCheck, Users } from "@phosphor-icons/react";
 
 const AI_TOOLS_URL = "https://aiwebtools.app";
 
@@ -13,6 +13,7 @@ const links = [
   { to: "/listings", label: "Listings", icon: GridFour },
   { to: "/needs", label: "Needs", icon: ListChecks },
   { to: "/matches", label: "Matches", icon: Handshake },
+  { to: "/community", label: "Community", icon: Users },
   { to: "/messages", label: "Messages", icon: EnvelopeSimple },
   { to: "/trades", label: "Trades", icon: ChatCircleText },
 ];

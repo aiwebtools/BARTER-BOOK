@@ -19,7 +19,7 @@ export default function AuthCallback() {
     (async () => {
       try {
         const r = await api.post("/auth/google/session", null, { headers: { "X-Session-ID": sessionId } });
-        localStorage.setItem("bg_token", r.data.token);
+        // Cookie is set by the backend — no localStorage needed.
         setUserDirect(r.data.user);
         window.history.replaceState(null, "", "/dashboard");
         nav("/dashboard", { replace: true, state: { user: r.data.user } });

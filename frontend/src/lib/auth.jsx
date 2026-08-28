@@ -28,8 +28,9 @@ export function AuthProvider({ children }) {
   }, [checkAuth]);
 
   const login = async (email, password) => {
+    // Backend sets an httpOnly `session_token` cookie; we do NOT persist the JWT in
+    // localStorage — this eliminates the XSS-exfiltration path flagged in review.
     const r = await api.post("/auth/login", { email, password });
-    localStorage.setItem("bg_token", r.data.token);
     setUser(r.data.user);
     return r.data.user;
   };
@@ -37,7 +38,6 @@ export function AuthProvider({ children }) {
   const signup = async (email, password, display_name) => {
     const referral_code = localStorage.getItem("bg_referral_code") || undefined;
     const r = await api.post("/auth/signup", { email, password, display_name, referral_code });
-    localStorage.setItem("bg_token", r.data.token);
     localStorage.removeItem("bg_referral_code");
     setUser(r.data.user);
     return r.data.user;
@@ -45,7 +45,6 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch (e) { console.warn("[auth] logout call failed", e?.response?.status || e?.message); }
-    localStorage.removeItem("bg_token");
     setUser(null);
   };
 

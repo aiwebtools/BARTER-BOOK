@@ -215,7 +215,7 @@ export default function Profile() {
                 {ratings.map((r) => (
                   <div key={r.id} className="border-b border-border pb-3 last:border-0">
                     <div className="flex items-center gap-1 mb-1">
-                      {[...Array(5)].map((_, i) => <Star key={i} size={14} weight="fill" className={i < r.stars ? "text-secondary" : "text-muted"} />)}
+                      {["s1","s2","s3","s4","s5"].map((k, i) => <Star key={k} size={14} weight="fill" className={i < r.stars ? "text-secondary" : "text-muted"} />)}
                     </div>
                     {r.comment && <p className="text-sm text-muted-foreground">{r.comment}</p>}
                     <p className="text-xs text-muted-foreground mt-1">{new Date(r.created_at).toLocaleDateString()}</p>

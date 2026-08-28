@@ -1,0 +1,88 @@
+{
+  "summary": "Iteration 11: verified the /api/community/dashboard fix and the localStorage->httpOnly cookie JWT migration, plus regressions. Created /app/backend/tests/test_iteration11.py (21 tests). Full suite: 158 passed / 1 failed (159 total). All cookie-auth requirements verified: signup+login set session_token with HttpOnly+Secure+SameSite=None+Path=/, /auth/me works with cookie-ONLY and with Bearer-ONLY, /auth/logout clears the cookie and subsequent /auth/me returns 401, garbage cookie -> 401. /api/community/dashboard returns 200 unauthenticated with the full documented shape; emergency listings surface in `emergency` with emergency_count>=1; new service titles surface in top_services; by_category rows are internally consistent and sorted desc by total. Emergency listings float to the top of GET /api/listings for sort=recent|distance|reputation. Full trade flow (signup->profile->listings->propose->accept->meetup->chat->complete x2->rate->duplicate-rate blocked) passes end-to-end using ONLY cookie sessions (no Authorization header). Regressions pass: public GET /listings, DM conversations, /matches/chains, /referrals/mine + /referrals/lookup. Frontend Playwright: /community renders publicly with real DB numbers (751-753 traders, 22 haves, 81 trades), emergency banner + urgent card renders when an emergency listing exists, top-skills section renders; UI signup sets the httpOnly cookie (verified httpOnly=True secure=True sameSite=None via CDP), no bg_token in localStorage, /dashboard loads on a fresh page load proving browser cookie session, nav-community link works, logout clears the cookie and /dashboard redirects to /login. One real data-correctness bug found: trades never persist `completed_at`, so recent_completed_30d is permanently 0.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/trades/{trade_id}/action?action=complete  ->  GET /api/community/dashboard",
+        "issue": "`completed_at` is NEVER written to the trade document. grep shows the only occurrence of `completed_at` in server.py is the read filter at line 1177. DB check: 81 trades have status=completed, 0 of them have a `completed_at` field. Consequence: `recent_completed_30d` on the public Community dashboard is hard-stuck at 0 while `completed_trades` shows 81 — the 'Completed in the last 30 days' stat is permanently wrong for real users. Fix: in trade_action, when p_done and r_done, add `updates['completed_at'] = now_iso()` alongside `updates['status'] = 'completed'`. Reproduced by tests/test_iteration11.py::TestOtherRegressions::test_recent_completed_30d_counts_a_just_completed_trade (0 -> 0 after completing a fresh trade).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/community/dashboard",
+        "issue": "`emergency_count` is computed as `len(emergency)` where `emergency` is capped at `.limit(12)`. Once more than 12 emergency listings are active the badge/count silently caps at 12 and under-reports. Use `await db.listings.count_documents({'is_active': True, 'is_emergency': True})` for the count and keep the 12-doc limit only for the rendered cards."
+      },
+      {
+        "endpoint": "POST /api/listings  ->  GET /api/community/dashboard (by_category)",
+        "issue": "`category` is accepted as a free-form string and is never validated against the canonical CATEGORIES list nor normalized. Live DB distinct categories: ['Baby & Family','Food & Water','Garden','Services & Skills','Tools','Transportation','home','outdoors'] — 'home'/'outdoors' are duplicates of 'Home'/'Outdoor & Camping' and render as separate rows in the dashboard category table (visible in the screenshot). Add a Literal/enum validation on ListingIn.category (or normalize case) so the aggregate breakdown is not split across casing variants."
+      },
+      {
+        "endpoint": "GET /api/community/dashboard",
+        "issue": "Performance: builds the emergency array by awaiting `enrich_listing` sequentially in a list comprehension (up to 12 sequential round-trips) on a PUBLIC, unauthenticated, uncached endpoint. Use asyncio.gather over the docs, and consider a short TTL cache since the aggregation is identical for all anonymous callers."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Community.jsx",
+        "issue": "No error state. On a failed /community/dashboard call the catch only console.warn's and `data` stays null, so `if (!data) return null` renders a completely blank page inside the shell — no error message, no retry button. Every API call needs loading/success/error states.",
+        "selector": "[data-testid=\"community-page\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/community — Urgent needs banner",
+        "issues": [
+          "ListingCard image placeholder for a photo-less listing is a ~240px tall empty block containing only a tiny faint initial letter ('T'), which dominates the emergency card and reads as a broken image. Use a compact placeholder (category icon + smaller fixed height) or collapse the media area when there is no photo.",
+          "Emergency grid is lg:grid-cols-3 so a single urgent listing leaves ~2/3 of the red destructive-bordered banner empty; consider centering or using auto-fit columns."
+        ]
+      },
+      {
+        "screen": "/community — By category table",
+        "issues": [
+          "Category labels render raw from the DB, mixing casing ('home', 'outdoors' next to 'Food & Water', 'Tools', 'Garden'). Title-case on render (or fix at write time) so the table looks like real product data."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11.py",
+    "/app/test_reports/pytest/pytest_iter11.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "HIGH: set `completed_at` (now_iso()) on the trade doc when both parties complete, in trade_action — otherwise recent_completed_30d on the public Community dashboard is permanently 0.",
+    "Compute emergency_count with count_documents instead of len() of the 12-doc limited list.",
+    "Validate/normalize listing `category` against the canonical CATEGORIES list so by_category does not split into 'home' vs 'Home' duplicates.",
+    "Add an error state (message + retry) to Community.jsx instead of returning null on fetch failure.",
+    "Optional: asyncio.gather the enrich_listing calls in /community/dashboard; consider a short TTL cache on this public endpoint.",
+    "Optional design: shrink/replace the photo-less ListingCard media placeholder."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1503 lines — well past the 700-line threshold. Split into routers (auth, listings, trades, community, admin, messaging) before it grows further.",
+    "trade_action writes status='completed' without a completion timestamp; any time-windowed trade analytics added later will silently return 0. Persist completed_at now.",
+    "_set_auth_cookie hardcodes secure=True / samesite='none' — correct for the HTTPS preview and cross-site setup, but this cookie will never be sent over plain http://localhost during local dev. Consider deriving these from an env flag.",
+    "/api/community/dashboard is public, uncached, and runs 4 count_documents + 1 aggregate + up to 12 sequential enrich_listing calls per request — an easy unauthenticated load amplifier.",
+    "ListingIn.category has no enum constraint while the frontend ships a fixed CATEGORIES array; the two are already out of sync in production data."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11.py"
+  ],
+  "success_rate": {
+    "backend": "99% (158/159 pytest; the single failure is the real completed_at bug)",
+    "frontend": "100% of tested flows passed (public /community, UI signup + cookie, dashboard via cookie, nav-community, logout + route guard)"
+  },
+  "seed_data_creation": "Ephemeral TEST_i11_* / TEST_ui_* users created via POST /api/auth/signup (password Passw0rd!23). All listings created by tests and by the manual UI emergency-banner check were deleted afterwards (verified 200 on DELETE). Users are left in place (no user-delete needed; they only inflate total_users).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "No seeded accounts. /app/memory/test_credentials.md is present and accurate: tests self-register via POST /api/auth/signup with password Passw0rd!23.",
+  "context_for_next_testing_agent": "Backend suite is /app/backend/tests/ (159 tests, run with `cd /app/backend && python -m pytest tests/ -q` — pytest.ini already enables xdist, do NOT pass -n/-p no:xdist). Iteration-11 file covers cookie auth + community dashboard. NOTE the actual route names differ from the review request: there is NO /api/discover (public browse is GET /api/listings), trades use POST /api/trades/{id}/action?action=accept|decline|cancel|complete (not /accept, /complete), conversations are keyed by other_user_id (GET /api/conversations/{other_user_id}, POST /api/conversations/{other_user_id}/messages), and referrals are /api/referrals/mine + /api/referrals/lookup/{code}. test_iteration11.py::test_recent_completed_30d_counts_a_just_completed_trade is the regression guard for the completed_at bug — it should pass once the main agent adds the timestamp. Dashboard/stats counter equality assertions were relaxed to +/-5 because the parallel suite mutates counts mid-test. Google OAuth was not exercised (external identity).",
+  "flaky_tests": [
+    "TestCommunityDashboard::test_dashboard_no_auth_leakage — was intermittently failing (~1 in 2 runs, completed_trades 81 vs 82) purely because parallel xdist workers complete trades between the two HTTP calls. Fixed in-test by allowing a +/-5 delta on volatile counters; not a product defect."
+  ],
+  "rca_of_the_issue": "recent_completed_30d always 0: /api/community/dashboard filters `db.trades.count_documents({'status':'completed','completed_at':{'$gte': thirty_days_ago}})` (server.py:1175-1178), but the completion path in trade_action (server.py:948-956) only sets `status='completed'`, `{role}_completed`, and `updated_at`. grep confirms line 1177 is the ONLY occurrence of `completed_at` in server.py, i.e. the field is read but never written. A direct Mongo check confirms 81 completed trades and 0 documents carrying `completed_at`, so the $gte filter matches nothing regardless of recency. Reproduction: signup two users, create two listings, POST /api/trades, accept, complete from both sides (trade status becomes 'completed'), then GET /api/community/dashboard — recent_completed_30d stays at its prior value while completed_trades increments. Mitigation: in trade_action, inside the `if p_done and r_done:` branch, add `updates['completed_at'] = now_iso()`; optionally backfill existing completed trades with their `updated_at` value."
+}

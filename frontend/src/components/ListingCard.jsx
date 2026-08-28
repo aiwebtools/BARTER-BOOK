@@ -17,7 +17,12 @@ export default function ListingCard({ listing, action }) {
           <span className={`absolute top-3 left-3 pill px-3 py-1 text-xs font-semibold tracking-wide ${meta.cls}`} data-testid={`kind-badge-${listing.kind}`}>
             {meta.label}
           </span>
-          {listing.distance_miles != null && (
+          {listing.is_emergency && (
+            <span className="absolute top-3 right-3 pill px-3 py-1 text-xs font-bold bg-destructive text-destructive-foreground animate-pulse" data-testid="emergency-badge">
+              🚨 {listing.emergency_type ? listing.emergency_type.toUpperCase() : "URGENT"}
+            </span>
+          )}
+          {!listing.is_emergency && listing.distance_miles != null && (
             <span className="absolute top-3 right-3 pill px-3 py-1 text-xs bg-background/90 backdrop-blur border border-border flex items-center gap-1">
               <MapPin size={14} weight="fill" /> {listing.distance_miles} mi
             </span>

@@ -33,7 +33,8 @@ export default function NewListing() {
   const [shippingNotes, setShippingNotes] = useState("");
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
-  // legacy alias
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [emergencyType, setEmergencyType] = useState("food");
   const shippingFee = shipping_fee;
 
   const upload = async (file) => {
@@ -71,6 +72,8 @@ export default function NewListing() {
         photos, tags,
         ships, shipping_fee: ships ? (shippingFee || null) : null,
         shipping_notes: ships ? (shippingNotes || null) : null,
+        is_emergency: kind === "need" ? isEmergency : false,
+        emergency_type: kind === "need" && isEmergency ? emergencyType : null,
       });
       toast.success("Listing posted!");
       nav("/listings");
@@ -131,6 +134,27 @@ export default function NewListing() {
             </div>
           )}
         </div>
+
+        {kind === "need" && (
+          <div className="rounded-xl border border-destructive/40 p-4 bg-destructive/5" data-testid="emergency-block">
+            <label className="flex items-center gap-2 font-medium cursor-pointer">
+              <input type="checkbox" checked={isEmergency} onChange={(e) => setIsEmergency(e.target.checked)} data-testid="emergency-toggle" />
+              🚨 This is urgent — flag as an emergency need
+            </label>
+            {isEmergency && (
+              <div className="mt-3">
+                <select value={emergencyType} onChange={(e) => setEmergencyType(e.target.value)} className="h-11 w-full rounded-xl border border-border bg-background px-3" data-testid="emergency-type">
+                  <option value="food">Food</option>
+                  <option value="water">Water</option>
+                  <option value="shelter">Shelter</option>
+                  <option value="medical">Medical / meds</option>
+                  <option value="other">Other urgent</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-2">Emergency needs float to the top of Discover for everyone nearby. Only use for genuine need.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {kind !== "need" && (
           <div className="rounded-xl border border-border p-4 bg-background">
