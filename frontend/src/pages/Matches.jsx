@@ -39,7 +39,8 @@ export default function Matches() {
       <h1 className="font-heading text-3xl sm:text-4xl font-bold mb-2">Potential trades near you.</h1>
       <p className="text-muted-foreground mb-8">These are people whose have/need pairs line up with yours.</p>
 
-      {loading ? <div className="text-center py-12 text-muted-foreground">Finding matches…</div> :
+      {loading && <div className="text-center py-12 text-muted-foreground">Finding matches…</div>}
+      {!loading && (
         <>
           {chains.length > 0 && (
             <section className="mb-10" data-testid="chains-section">
@@ -69,13 +70,14 @@ export default function Matches() {
             </section>
           )}
 
-          {matches.length === 0 && chains.length === 0 ? (
+          {matches.length === 0 && chains.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border p-16 text-center">
               <h3 className="font-heading font-semibold text-xl mb-2">No matches yet</h3>
               <p className="text-muted-foreground mb-6">Post more items and needs, or expand your search radius.</p>
               <Button onClick={() => nav("/new")} className="rounded-full">Post something</Button>
             </div>
-          ) : matches.length === 0 ? null : (
+          )}
+          {matches.length > 0 && (
           <div className="grid md:grid-cols-2 gap-5">
             {matches.map((m) => (
               <div key={`${m.my_listing.listing_id}::${m.their_listing.listing_id}`} className="rounded-2xl bg-card border border-border p-6 card-hover" data-testid={`match-${m.my_listing.listing_id}-${m.their_listing.listing_id}`}>
@@ -106,7 +108,7 @@ export default function Matches() {
           </div>
         )}
         </>
-      }
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -11,11 +11,16 @@ export function ReferralPanel() {
   const [data, setData] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    api.get("/referrals/mine")
-      .then((r) => setData(r.data))
-      .catch((e) => console.warn("[referral] load failed", e?.response?.status || e?.message));
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/referrals/mine");
+      setData(r.data);
+    } catch (e) {
+      console.warn("[referral] load failed", e?.response?.status || e?.message);
+    }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   if (!data) return null;
 

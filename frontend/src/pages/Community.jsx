@@ -37,7 +37,7 @@ export default function Community() {
   if (!data) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-24 md:pb-8" data-testid="community-page">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-24 md:pb-8 min-h-[calc(100vh-4rem)]" data-testid="community-page">
       <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary mb-1">Community</p>
       <h1 className="font-heading text-3xl sm:text-4xl font-bold mb-2">What your neighbors have, need, and can do.</h1>
       <p className="text-muted-foreground mb-8 text-sm">Anonymized aggregate view of the whole exchange. No personal info — just the shape of your local economy.</p>

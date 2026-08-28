@@ -18,7 +18,11 @@ const STATUS_META = {
 
 export function TradesList() {
   const [trades, setTrades] = useState([]);
-  useEffect(() => { api.get("/trades").then((r) => setTrades(r.data)); }, []);
+  const load = useCallback(async () => {
+    const r = await api.get("/trades");
+    setTrades(r.data);
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24 md:pb-8" data-testid="trades-page">

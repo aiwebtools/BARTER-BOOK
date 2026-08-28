@@ -7,6 +7,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { GoogleLogo } from "@phosphor-icons/react";
 
+function getSubmitLabel(loading, mode) {
+  if (loading) return "Please wait…";
+  return mode === "signup" ? "Create account" : "Sign in";
+}
+
 export default function Login({ mode = "login" }) {
   const nav = useNavigate();
   const { login, signup } = useAuth();
@@ -95,7 +100,7 @@ export default function Login({ mode = "login" }) {
               <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl mt-1" placeholder="••••••••" data-testid="auth-password" />
             </div>
             <Button type="submit" className="w-full h-12 rounded-full" disabled={loading} data-testid="auth-submit">
-              {loading ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
+              {getSubmitLabel(loading, mode)}
             </Button>
           </form>
 

@@ -104,12 +104,12 @@ export default function Landing() {
         </div>
         <div className="grid md:grid-cols-4 gap-6">
           {[
-            { icon: Package, title: "Post what you have", desc: "Items sitting around? Skills to offer? List them in seconds." },
-            { icon: Leaf, title: "Add what you need", desc: "Keep a running Needs list. We'll ping you when something matches." },
-            { icon: Handshake, title: "Find local matches", desc: "See potential trades within your chosen radius." },
-            { icon: MapPinLine, title: "Meet safely", desc: "Chat, pick a public meetup, complete the trade, build reputation." },
+            { id: "post-have", icon: Package, title: "Post what you have", desc: "Items sitting around? Skills to offer? List them in seconds." },
+            { id: "add-need", icon: Leaf, title: "Add what you need", desc: "Keep a running Needs list. We'll ping you when something matches." },
+            { id: "find-match", icon: Handshake, title: "Find local matches", desc: "See potential trades within your chosen radius." },
+            { id: "meet-safely", icon: MapPinLine, title: "Meet safely", desc: "Chat, pick a public meetup, complete the trade, build reputation." },
           ].map((s, i) => (
-            <div key={i} className="rounded-2xl border border-border p-6 bg-card card-hover">
+            <div key={s.id} className="rounded-2xl border border-border p-6 bg-card card-hover">
               <div className="w-12 h-12 rounded-xl bg-accent grid place-items-center mb-4">
                 <s.icon size={26} weight="duotone" className="text-primary" />
               </div>
@@ -129,8 +129,8 @@ export default function Landing() {
             <h2 className="font-heading text-3xl sm:text-4xl font-bold">Real exchanges. No price tags.</h2>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {examples.map((e, i) => (
-              <div key={i} className="rounded-2xl bg-card border border-border p-6 flex flex-col gap-3">
+            {examples.map((e) => (
+              <div key={`${e.a}->${e.b}`} className="rounded-2xl bg-card border border-border p-6 flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="pill px-3 py-1 text-xs font-semibold bg-accent text-accent-foreground">HAVE</span>
                   <span className="font-medium">{e.a}</span>
@@ -149,11 +149,11 @@ export default function Landing() {
       {/* Trust */}
       <section className="max-w-7xl mx-auto px-6 py-24 grid md:grid-cols-3 gap-6">
         {[
-          { icon: ShieldCheck, title: "Meet somewhere public", desc: "The app suggests libraries, community centers, and public parking. Never share your home address." },
-          { icon: Star, title: "Reputation is earned", desc: "Ratings and completed-trade counts show up next to a name. Nothing fake, no filters." },
-          { icon: GitBranch, title: "Three-way trades", desc: "A→B→C→A works too. When two people don't have exactly what each other needs, sometimes a third person closes the loop." },
-        ].map((f, i) => (
-          <div key={i} className="rounded-2xl border border-border p-8 bg-card card-hover">
+          { id: "public-meet", icon: ShieldCheck, title: "Meet somewhere public", desc: "The app suggests libraries, community centers, and public parking. Never share your home address." },
+          { id: "reputation", icon: Star, title: "Reputation is earned", desc: "Ratings and completed-trade counts show up next to a name. Nothing fake, no filters." },
+          { id: "three-way", icon: GitBranch, title: "Three-way trades", desc: "A→B→C→A works too. When two people don't have exactly what each other needs, sometimes a third person closes the loop." },
+        ].map((f) => (
+          <div key={f.id} className="rounded-2xl border border-border p-8 bg-card card-hover">
             <f.icon size={36} weight="duotone" className="text-primary mb-4" />
             <h3 className="font-heading font-semibold text-xl mb-2">{f.title}</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
@@ -169,8 +169,8 @@ export default function Landing() {
             <h2 className="font-heading text-3xl sm:text-4xl font-bold">Frequently asked</h2>
           </div>
           <div className="space-y-3">
-            {faqs.map((f, i) => (
-              <details key={i} className="group bg-card border border-border rounded-2xl px-6 py-4">
+            {faqs.map((f) => (
+              <details key={f.q} className="group bg-card border border-border rounded-2xl px-6 py-4">
                 <summary className="cursor-pointer font-heading font-semibold flex items-center justify-between">
                   {f.q}
                   <span className="text-muted-foreground group-open:rotate-45 transition-transform">＋</span>

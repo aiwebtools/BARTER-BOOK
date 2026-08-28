@@ -8,6 +8,14 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Trash, PencilSimple, ArrowLeft } from "@phosphor-icons/react";
 
+const KIND_LABEL = { have: "HAVE", need: "NEED", service: "CAN DO" };
+const KIND_STYLE = {
+  have: "bg-accent text-accent-foreground",
+  need: "bg-secondary text-secondary-foreground",
+  service: "bg-primary text-primary-foreground",
+};
+const KIND_SHARE_VERB = { have: "I've got", need: "Looking for", service: "Offering" };
+
 export function MyListings() {
   const nav = useNavigate();
   const [items, setItems] = useState([]);
@@ -100,8 +108,8 @@ export function ListingDetail() {
         )}
         <div className="p-6 sm:p-8">
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className={`pill px-3 py-1 text-xs font-bold ${listing.kind === "have" ? "bg-accent text-accent-foreground" : listing.kind === "need" ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}`}>
-              {listing.kind === "have" ? "HAVE" : listing.kind === "need" ? "NEED" : "CAN DO"}
+            <span data-testid="listing-kind-badge" className={`pill px-3 py-1 text-xs font-bold ${KIND_STYLE[listing.kind] || KIND_STYLE.have}`}>
+              {KIND_LABEL[listing.kind] || "ITEM"}
             </span>
             <span className="text-xs text-muted-foreground">{listing.category}</span>
             {listing.condition && <span className="text-xs text-muted-foreground">· {listing.condition}</span>}
@@ -173,7 +181,7 @@ export function ListingDetail() {
             <ShareButtons
               url={typeof window !== "undefined" ? window.location.href : ""}
               title={`${listing.title} — BarterGrid`}
-              text={`${listing.kind === "have" ? "I've got" : listing.kind === "need" ? "Looking for" : "Offering"}: ${listing.title}. Trade for it on BarterGrid — free local barter network.`}
+              text={`${KIND_SHARE_VERB[listing.kind] || "Trading"}: ${listing.title}. Trade for it on BarterGrid — free local barter network.`}
               testid="listing-share"
             />
           </div>

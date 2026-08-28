@@ -96,7 +96,7 @@ export default function Profile() {
               {user.verified_referral && <span className="pill px-2.5 py-0.5 text-xs bg-primary text-primary-foreground flex items-center gap-1"><CheckCircle size={12} weight="fill" /> Trusted</span>}
               <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><Star size={12} weight="fill" className="text-secondary" /> {(user.reputation_score || 0).toFixed(1)}</span>
               <span className="pill px-2.5 py-0.5 text-xs bg-muted">{user.successful_trades} trades</span>
-              <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><MapPinLine size={12} weight="fill" /> {user.city || "—"}, {user.state}</span>
+              <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><MapPinLine size={12} weight="fill" /> {[user.city, user.state].filter(Boolean).join(", ") || "—"}</span>
             </div>
           </div>
           <a href={`/u/${user.user_id}`} target="_blank" rel="noreferrer" className="pill px-4 py-2 text-sm border border-border hover:bg-muted transition-colors flex items-center gap-1 font-medium" data-testid="view-store"><Storefront size={16} weight="duotone" /> View storefront</a>

@@ -97,7 +97,7 @@ export default function PublicProfile() {
                 {u.verified_referral && <span className="pill px-2.5 py-0.5 text-xs bg-primary text-primary-foreground flex items-center gap-1"><CheckCircle size={12} weight="fill" /> Trusted</span>}
                 <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><Star size={12} weight="fill" className="text-secondary" /> {(u.reputation_score || 0).toFixed(1)} · {u.ratings_count || 0} reviews</span>
                 <span className="pill px-2.5 py-0.5 text-xs bg-muted">{u.successful_trades || 0} trades</span>
-                <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><MapPinLine size={12} weight="fill" /> {u.city || "—"}, {u.state}</span>
+                <span className="pill px-2.5 py-0.5 text-xs bg-muted flex items-center gap-1"><MapPinLine size={12} weight="fill" /> {[u.city, u.state].filter(Boolean).join(", ") || "—"}</span>
               </div>
             </div>
             {!isMe && me && (

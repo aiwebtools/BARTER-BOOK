@@ -13,7 +13,9 @@ if not base_url:
     raise RuntimeError("REACT_APP_BACKEND_URL missing")
 BASE_URL = base_url.rstrip("/")
 API = f"{BASE_URL}/api"
-PASSWORD = "Passw0rd!23"
+# Password is generated per-run so ephemeral test users don't share credentials
+# across CI shards. Override with BG_TEST_PASSWORD if you need a stable value.
+PASSWORD = os.environ.get("BG_TEST_PASSWORD") or f"Tt!{uuid.uuid4().hex[:14]}"
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,20}$")
 
 

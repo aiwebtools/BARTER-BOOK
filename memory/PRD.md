@@ -52,7 +52,18 @@ Build a local barter and community exchange network where users trade goods, ski
 - **Category normalization** — free-form category input coerced to canonical casing (fixes 'home' vs 'Home' duplicate rows); backfilled all existing listings
 - **`emergency_count` now uses count_documents** instead of len() of capped-12 list
 - **Community.jsx error state** — retry button on API failure
-- Backend: 159/159 tests passing
+- **Code review pass (from user-supplied report)**:
+  - Moved test PASSWORD out of source code into env var (`BG_TEST_PASSWORD`)
+  - Refactored high-complexity Python functions: `trade_action` now dispatches through `_TRADE_ACTIONS` map + small handlers (`_handle_trade_accept/decline/cancel/complete`) with `_finalize_completed_trade` and `_mark_referral_verified` extracted; `list_listings` split into `_build_listing_query` + `_apply_listing_filters` + `_sort_listings`; `get_trade_chains` split into `_listing_tokens` + `_collect_need_terms` + `_build_chain_participant` with cached `wants_of()`; `dashboard_stats` split into 3 parallel helpers running via `asyncio.gather`
+  - Converted one-shot mount `useEffect`s to `useCallback` + `useEffect([load])` pattern in Dashboard, Trades, Referral so hook deps are explicit and complete
+  - Replaced nested ternaries with lookup maps: `KIND_LABEL`/`KIND_STYLE`/`KIND_SHARE_VERB` in Listings.jsx, `getSubmitLabel(loading, mode)` in Login.jsx, expanded `A ? B : C ? null : D` into separate `&&` gates in Matches.jsx
+  - Replaced `key={i}` array-index keys with stable data-derived keys in Landing.jsx (howItWorks `s.id`, examples composite `a->b`, trust `f.id`, faqs `f.q`)
+- **Trade-complete state guard** (found by testing agent) — reject `action=complete` unless trade status is `accepted` or `meetup_planned`. Fixes: (a) completing a declined/proposed trade, (b) double-complete on already-completed trade re-incrementing `successful_trades` and re-firing rating notifications.
+- **Chain dedup** — `/api/matches/chains` now keys on the unordered set of participant listing IDs so one loop isn't returned in multiple orderings.
+- **Profile location fix** — `[city, state].filter(Boolean).join(", ")` replaces `${city}, ${state}` so no dangling `— ,` when state is empty.
+- **Community page min-height** — no more floating footer mid-page on sparse data.
+- **Test data cleanup** — purged 1505 leftover ephemeral TEST_* user accounts and their associated listings/trades/messages/notifications; community counters now reflect real data (~148 traders, 9 haves, 4 needs, 17 completed trades).
+- Backend: **191/191 tests passing** (159 legacy + 32 new iteration12 regression tests)
 
 ## Prioritized backlog
 

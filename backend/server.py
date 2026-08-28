@@ -655,13 +655,9 @@ async def create_listing(inp: ListingIn, user: dict = Depends(get_current_user))
     doc.pop("_id", None)
     return await enrich_listing(doc, user)
 
-@api.get("/listings")
-async def list_listings(kind: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
-                        radius: Optional[int] = None, mine: bool = False,
-                        verified_only: bool = False, has_photos: bool = False,
-                        sort: str = "recent",
-                        user: Optional[dict] = Depends(get_optional_user)):
-    query = {"is_active": True}
+async def _build_listing_query(kind, category, q, mine, has_photos, user) -> dict:
+    """Build the MongoDB query for /listings from user-facing filters."""
+    query: dict = {"is_active": True}
     if kind:
         query["kind"] = kind.lower()
     if category:
@@ -671,29 +667,57 @@ async def list_listings(kind: Optional[str] = None, category: Optional[str] = No
             raise HTTPException(401, "Login required to view your listings")
         query["user_id"] = user["user_id"]
     elif user:
-        # exclude own listings + blocked users
-        blocked = await db.blocks.find({"$or": [{"blocker": user["user_id"]}, {"blocked": user["user_id"]}]}).to_list(1000)
-        blocked_ids = set()
-        for b in blocked:
+        # exclude own listings + blocked users (both directions)
+        blocked_docs = await db.blocks.find(
+            {"$or": [{"blocker": user["user_id"]}, {"blocked": user["user_id"]}]}
+        ).to_list(1000)
+        blocked_ids: set[str] = set()
+        for b in blocked_docs:
             blocked_ids.add(b["blocker"] if b["blocked"] == user["user_id"] else b["blocked"])
-        query["user_id"] = {"$nin": list(blocked_ids) + [user["user_id"]]} if blocked_ids else {"$ne": user["user_id"]}
+        excluded = list(blocked_ids) + [user["user_id"]]
+        query["user_id"] = {"$nin": excluded} if blocked_ids else {"$ne": user["user_id"]}
     if q:
-        query["$or"] = [{"title": {"$regex": q, "$options": "i"}}, {"description": {"$regex": q, "$options": "i"}}, {"tags": {"$regex": q, "$options": "i"}}]
+        query["$or"] = [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}},
+            {"tags": {"$regex": q, "$options": "i"}},
+        ]
     if has_photos:
         query["photos.0"] = {"$exists": True}
-    docs = await db.listings.find(query, {"_id": 0}).sort("created_at", -1).limit(400).to_list(400)
-    enriched = [await enrich_listing(d, user) for d in docs]
+    return query
+
+
+def _apply_listing_filters(enriched: list[dict], verified_only: bool, radius: Optional[int], user: Optional[dict]) -> list[dict]:
     if verified_only:
         enriched = [e for e in enriched if e.get("user_reputation", 0) > 0 or e.get("user_trades", 0) > 0]
     if radius and user and user.get("approx_lat"):
         enriched = [e for e in enriched if e.get("distance_miles") is None or e["distance_miles"] <= radius]
-    # Emergency listings ALWAYS float to the top, regardless of sort mode
-    enriched.sort(key=lambda e: 0 if e.get("is_emergency") else 1)
+    return enriched
+
+
+def _sort_listings(enriched: list[dict], sort: str) -> list[dict]:
+    """Emergency needs always float to the top; secondary sort follows the `sort` param."""
+    emergency_first = lambda e: 0 if e.get("is_emergency") else 1  # noqa: E731
     if sort == "closest":
-        enriched.sort(key=lambda e: (0 if e.get("is_emergency") else 1, e.get("distance_miles") if e.get("distance_miles") is not None else 9999))
+        enriched.sort(key=lambda e: (emergency_first(e), e.get("distance_miles") if e.get("distance_miles") is not None else 9999))
     elif sort == "reputation":
-        enriched.sort(key=lambda e: (0 if e.get("is_emergency") else 1, -(e.get("user_reputation") or 0)))
-    return enriched[:200]
+        enriched.sort(key=lambda e: (emergency_first(e), -(e.get("user_reputation") or 0)))
+    else:  # "recent" (default) — DB already returned newest first; just re-key by emergency
+        enriched.sort(key=emergency_first)
+    return enriched
+
+
+@api.get("/listings")
+async def list_listings(kind: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
+                        radius: Optional[int] = None, mine: bool = False,
+                        verified_only: bool = False, has_photos: bool = False,
+                        sort: str = "recent",
+                        user: Optional[dict] = Depends(get_optional_user)):
+    query = await _build_listing_query(kind, category, q, mine, has_photos, user)
+    docs = await db.listings.find(query, {"_id": 0}).sort("created_at", -1).limit(400).to_list(400)
+    enriched = list(await asyncio.gather(*(enrich_listing(d, user) for d in docs))) if docs else []
+    enriched = _apply_listing_filters(enriched, verified_only, radius, user)
+    return _sort_listings(enriched, sort)[:200]
 
 @api.get("/listings/{listing_id}")
 async def get_listing(listing_id: str, user: dict = Depends(get_current_user)):
@@ -801,6 +825,38 @@ async def get_matches(user: dict = Depends(get_current_user)):
     matches.sort(key=lambda m: -m["score"])
     return matches[:50]
 
+def _listing_tokens(l: dict) -> set:
+    """All searchable tokens for a listing (title + tags)."""
+    return _tokens(l["title"] + " " + " ".join(l.get("tags", [])))
+
+
+def _collect_need_terms(needs: list[dict], haves: list[dict]) -> set:
+    """A user's 'wants' set = tokens from their NEED listings + tokens from their HAVE listings'
+    wants[] field. Handles both explicit needs and reciprocal-want hints."""
+    terms: set = set()
+    for n in needs:
+        terms |= _listing_tokens(n)
+    for h in haves:
+        for w in h.get("wants", []):
+            terms |= _tokens(w)
+    return terms
+
+
+async def _build_chain_participant(uid: str, listing: dict, viewer: dict) -> dict:
+    """Look up a user's public identity and enrich their listing for the chain UI."""
+    owner = await db.users.find_one({"user_id": uid}, {"_id": 0, "password_hash": 0, "email": 0})
+    enriched = await enrich_listing(listing, viewer)
+    return {
+        "listing": enriched,
+        "user": {
+            "user_id": owner["user_id"],
+            "display_name": owner["display_name"],
+            "city": owner.get("city"),
+            "reputation_score": owner.get("reputation_score", 0.0),
+        },
+    }
+
+
 @api.get("/matches/chains")
 async def get_trade_chains(user: dict = Depends(get_current_user)):
     """Find three-person trade chains: you → B → C → you.
@@ -810,16 +866,17 @@ async def get_trade_chains(user: dict = Depends(get_current_user)):
     Kept small (<=25 chains) and gated to compatible-radius participants when the current user has coordinates.
     """
     uid = user["user_id"]
-    my_haves = await db.listings.find({"user_id": uid, "kind": {"$in": ["have", "service"]}, "is_active": True}, {"_id": 0}).to_list(50)
-    my_needs_docs = await db.listings.find({"user_id": uid, "kind": "need", "is_active": True}, {"_id": 0}).to_list(50)
-    if not my_haves or not my_needs_docs:
+    my_haves = await db.listings.find(
+        {"user_id": uid, "kind": {"$in": ["have", "service"]}, "is_active": True},
+        {"_id": 0},
+    ).to_list(50)
+    my_needs = await db.listings.find(
+        {"user_id": uid, "kind": "need", "is_active": True},
+        {"_id": 0},
+    ).to_list(50)
+    if not my_haves or not my_needs:
         return []
-    my_need_terms = set()
-    for n in my_needs_docs:
-        my_need_terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
-    for h in my_haves:
-        for w in h.get("wants", []):
-            my_need_terms |= _tokens(w)
+    my_need_terms = _collect_need_terms(my_needs, my_haves)
 
     others_haves = await db.listings.find(
         {"user_id": {"$ne": uid}, "kind": {"$in": ["have", "service"]}, "is_active": True},
@@ -830,60 +887,49 @@ async def get_trade_chains(user: dict = Depends(get_current_user)):
         {"_id": 0},
     ).to_list(500)
 
-    needs_by_user = {}
+    needs_by_user: dict[str, list] = {}
     for n in others_needs:
         needs_by_user.setdefault(n["user_id"], []).append(n)
-    haves_by_user = {}
+    haves_by_user: dict[str, list] = {}
     for h in others_haves:
         haves_by_user.setdefault(h["user_id"], []).append(h)
 
-    def user_need_terms(other_uid: str) -> set:
-        terms = set()
-        for n in needs_by_user.get(other_uid, []):
-            terms |= _tokens(n["title"] + " " + " ".join(n.get("tags", [])))
-        for h in haves_by_user.get(other_uid, []):
-            for w in h.get("wants", []):
-                terms |= _tokens(w)
-        return terms
+    need_terms_cache: dict[str, set] = {}
+    def wants_of(other_uid: str) -> set:
+        if other_uid not in need_terms_cache:
+            need_terms_cache[other_uid] = _collect_need_terms(
+                needs_by_user.get(other_uid, []),
+                haves_by_user.get(other_uid, []),
+            )
+        return need_terms_cache[other_uid]
 
-    chains = []
-    seen = set()
+    chains: list = []
+    seen: set = set()
 
     for my_have in my_haves:
-        my_have_tokens = _tokens(my_have["title"] + " " + " ".join(my_have.get("tags", [])))
-        # B is any user whose need-terms overlap my_have (excluding me)
+        my_have_tokens = _listing_tokens(my_have)
         for b_have in others_haves:
             b_uid = b_have["user_id"]
-            if b_uid == uid:
-                continue
-            b_need = user_need_terms(b_uid)
-            if not (my_have_tokens & b_need):
+            if b_uid == uid or not (my_have_tokens & wants_of(b_uid)):
                 continue  # B doesn't want what I have
-            b_have_tokens = _tokens(b_have["title"] + " " + " ".join(b_have.get("tags", [])))
-            # C is any user whose need-terms overlap b_have, and C's have covers my need
+            b_have_tokens = _listing_tokens(b_have)
             for c_have in others_haves:
                 c_uid = c_have["user_id"]
-                if c_uid == uid or c_uid == b_uid:
+                if c_uid in (uid, b_uid):
                     continue
-                c_need = user_need_terms(c_uid)
-                if not (b_have_tokens & c_need):
+                if not (b_have_tokens & wants_of(c_uid)):
                     continue  # C doesn't want what B has
-                c_have_tokens = _tokens(c_have["title"] + " " + " ".join(c_have.get("tags", [])))
-                if not (c_have_tokens & my_need_terms):
+                if not (_listing_tokens(c_have) & my_need_terms):
                     continue  # C's have doesn't match my need
-                key = (my_have["listing_id"], b_have["listing_id"], c_have["listing_id"])
+                key = frozenset((my_have["listing_id"], b_have["listing_id"], c_have["listing_id"]))
                 if key in seen:
                     continue
                 seen.add(key)
-                b_owner = await db.users.find_one({"user_id": b_uid}, {"_id": 0, "password_hash": 0, "email": 0})
-                c_owner = await db.users.find_one({"user_id": c_uid}, {"_id": 0, "password_hash": 0, "email": 0})
-                b_enriched = await enrich_listing(b_have, user)
-                c_enriched = await enrich_listing(c_have, user)
-                chains.append({
-                    "you": {"listing": my_have},
-                    "b": {"listing": b_enriched, "user": {"user_id": b_owner["user_id"], "display_name": b_owner["display_name"], "city": b_owner.get("city"), "reputation_score": b_owner.get("reputation_score", 0.0)}},
-                    "c": {"listing": c_enriched, "user": {"user_id": c_owner["user_id"], "display_name": c_owner["display_name"], "city": c_owner.get("city"), "reputation_score": c_owner.get("reputation_score", 0.0)}},
-                })
+                b_part, c_part = await asyncio.gather(
+                    _build_chain_participant(b_uid, b_have, user),
+                    _build_chain_participant(c_uid, c_have, user),
+                )
+                chains.append({"you": {"listing": my_have}, "b": b_part, "c": c_part})
                 if len(chains) >= 25:
                     return chains
     return chains
@@ -943,6 +989,71 @@ async def get_trade(trade_id: str, user: dict = Depends(get_current_user)):
     t["role"] = "proposer" if t["proposer_id"] == user["user_id"] else "recipient"
     return t
 
+async def _handle_trade_accept(t: dict, user: dict) -> tuple[dict, Optional[str]]:
+    if user["user_id"] != t["recipient_id"] or t["status"] != "proposed":
+        raise HTTPException(400, "Invalid action or state: accept")
+    return {"status": "accepted"}, f"{user['display_name']} accepted your trade proposal!"
+
+async def _handle_trade_decline(t: dict, user: dict) -> tuple[dict, Optional[str]]:
+    if user["user_id"] != t["recipient_id"] or t["status"] != "proposed":
+        raise HTTPException(400, "Invalid action or state: decline")
+    return {"status": "declined"}, f"{user['display_name']} declined your trade proposal."
+
+async def _handle_trade_cancel(t: dict, user: dict) -> tuple[dict, Optional[str]]:
+    if t["status"] in ("completed", "cancelled", "declined"):
+        raise HTTPException(400, "Invalid action or state: cancel")
+    return {"status": "cancelled"}, f"{user['display_name']} cancelled the trade."
+
+async def _mark_referral_verified(uid: str) -> None:
+    """If `uid` has an unverified referrer, mark both sides verified and notify them."""
+    u = await db.users.find_one({"user_id": uid}, {"_id": 0})
+    if not (u and u.get("referred_by") and not u.get("verified_referral")):
+        return
+    await db.users.update_one({"user_id": uid}, {"$set": {"verified_referral": True}})
+    await db.users.update_one({"user_id": u["referred_by"]}, {"$set": {"verified_referral": True}})
+    now = now_iso()
+    await db.notifications.insert_one({
+        "id": new_id(), "user_id": u["referred_by"], "type": "referral_verified",
+        "text": f"{u['display_name']} completed their first trade — you both earned a Verified badge!",
+        "read": False, "created_at": now,
+    })
+    await db.notifications.insert_one({
+        "id": new_id(), "user_id": uid, "type": "referral_verified",
+        "text": "You completed your first trade! You've earned a Verified badge.",
+        "read": False, "created_at": now,
+    })
+
+async def _finalize_completed_trade(t: dict, trade_id: str) -> None:
+    """Both sides confirmed. Increment counts, fire ratings + email requests, run referral hook."""
+    await db.users.update_one({"user_id": t["proposer_id"]}, {"$inc": {"successful_trades": 1}})
+    await db.users.update_one({"user_id": t["recipient_id"]}, {"$inc": {"successful_trades": 1}})
+    for uid in (t["proposer_id"], t["recipient_id"]):
+        other_uid = t["recipient_id"] if uid == t["proposer_id"] else t["proposer_id"]
+        other_u = await db.users.find_one({"user_id": other_uid}, {"_id": 0})
+        await _add_notification(uid, "rating_request", f"Trade complete! How did it go with {other_u['display_name']}?", trade_id=trade_id)
+        await _queue_email(uid, "trade_completed", f"Your trade with {other_u['display_name']} is complete", {"trade_id": trade_id})
+        await _mark_referral_verified(uid)
+
+async def _handle_trade_complete(t: dict, user: dict, trade_id: str) -> tuple[dict, Optional[str]]:
+    if t["status"] not in ("accepted", "meetup_planned"):
+        raise HTTPException(400, "Invalid action or state: complete")
+    role = "proposer" if user["user_id"] == t["proposer_id"] else "recipient"
+    updates = {f"{role}_completed": True}
+    p_done = updates.get("proposer_completed", t.get("proposer_completed", False))
+    r_done = updates.get("recipient_completed", t.get("recipient_completed", False))
+    if p_done and r_done:
+        updates["status"] = "completed"
+        updates["completed_at"] = now_iso()
+        await _finalize_completed_trade(t, trade_id)
+        return updates, None
+    return updates, f"{user['display_name']} marked the trade complete on their side — confirm from your side to finish."
+
+_TRADE_ACTIONS = {
+    "accept": _handle_trade_accept,
+    "decline": _handle_trade_decline,
+    "cancel": _handle_trade_cancel,
+}
+
 @api.post("/trades/{trade_id}/action")
 async def trade_action(trade_id: str, action: str = Query(...), user: dict = Depends(get_current_user)):
     t = await db.trades.find_one({"trade_id": trade_id})
@@ -950,58 +1061,18 @@ async def trade_action(trade_id: str, action: str = Query(...), user: dict = Dep
         raise HTTPException(404, "Not found")
     if user["user_id"] not in (t["proposer_id"], t["recipient_id"]):
         raise HTTPException(403)
-    other_id = t["recipient_id"] if user["user_id"] == t["proposer_id"] else t["proposer_id"]
-    updates = {"updated_at": now_iso()}
-    notif_text = None
-    notif_type = "trade"
-    if action == "accept" and user["user_id"] == t["recipient_id"] and t["status"] == "proposed":
-        updates["status"] = "accepted"
-        notif_text = f"{user['display_name']} accepted your trade proposal!"
-    elif action == "decline" and user["user_id"] == t["recipient_id"] and t["status"] == "proposed":
-        updates["status"] = "declined"
-        notif_text = f"{user['display_name']} declined your trade proposal."
-    elif action == "cancel":
-        updates["status"] = "cancelled"
-        notif_text = f"{user['display_name']} cancelled the trade."
-    elif action == "complete":
-        role = "proposer" if user["user_id"] == t["proposer_id"] else "recipient"
-        updates[f"{role}_completed"] = True
-        p_done = updates.get("proposer_completed", t.get("proposer_completed", False))
-        r_done = updates.get("recipient_completed", t.get("recipient_completed", False))
-        if p_done and r_done:
-            updates["status"] = "completed"
-            updates["completed_at"] = now_iso()
-            await db.users.update_one({"user_id": t["proposer_id"]}, {"$inc": {"successful_trades": 1}})
-            await db.users.update_one({"user_id": t["recipient_id"]}, {"$inc": {"successful_trades": 1}})
-            # notify both to rate + trade_completed email
-            for uid in (t["proposer_id"], t["recipient_id"]):
-                other_uid = t["recipient_id"] if uid == t["proposer_id"] else t["proposer_id"]
-                other_u = await db.users.find_one({"user_id": other_uid}, {"_id": 0})
-                await _add_notification(uid, "rating_request", f"Trade complete! How did it go with {other_u['display_name']}?", trade_id=trade_id)
-                await _queue_email(uid, "trade_completed", f"Your trade with {other_u['display_name']} is complete", {"trade_id": trade_id})
-            # Referral verification: first trade for a referred user
-            for uid in (t["proposer_id"], t["recipient_id"]):
-                u = await db.users.find_one({"user_id": uid}, {"_id": 0})
-                if u and u.get("referred_by") and not u.get("verified_referral"):
-                    await db.users.update_one({"user_id": uid}, {"$set": {"verified_referral": True}})
-                    await db.users.update_one({"user_id": u["referred_by"]}, {"$set": {"verified_referral": True}})
-                    await db.notifications.insert_one({
-                        "id": new_id(), "user_id": u["referred_by"], "type": "referral_verified",
-                        "text": f"{u['display_name']} completed their first trade — you both earned a Verified badge!",
-                        "read": False, "created_at": now_iso()
-                    })
-                    await db.notifications.insert_one({
-                        "id": new_id(), "user_id": uid, "type": "referral_verified",
-                        "text": "You completed your first trade! You've earned a Verified badge.",
-                        "read": False, "created_at": now_iso()
-                    })
-        else:
-            notif_text = f"{user['display_name']} marked the trade complete on their side — confirm from your side to finish."
+
+    if action == "complete":
+        action_updates, notif_text = await _handle_trade_complete(t, user, trade_id)
+    elif action in _TRADE_ACTIONS:
+        action_updates, notif_text = await _TRADE_ACTIONS[action](t, user)
     else:
         raise HTTPException(400, f"Invalid action or state: {action}")
+
+    updates = {"updated_at": now_iso(), **action_updates}
+    other_id = t["recipient_id"] if user["user_id"] == t["proposer_id"] else t["proposer_id"]
     if notif_text:
-        await _add_notification(other_id, notif_type, notif_text, trade_id=trade_id)
-        # queue email (fire-and-forget; actual delivery requires provider key)
+        await _add_notification(other_id, "trade", notif_text, trade_id=trade_id)
         await _queue_email(other_id, "trade_update", notif_text, {"trade_id": trade_id})
     await db.trades.update_one({"trade_id": trade_id}, {"$set": updates})
     return await get_trade(trade_id, user)
@@ -1219,44 +1290,72 @@ async def community_dashboard(user: Optional[dict] = Depends(get_optional_user))
         "top_services": top_services,
     }
 
+async def _get_my_listing_counts(uid: str) -> dict:
+    haves, needs, services = await asyncio.gather(
+        db.listings.count_documents({"user_id": uid, "kind": "have", "is_active": True}),
+        db.listings.count_documents({"user_id": uid, "kind": "need", "is_active": True}),
+        db.listings.count_documents({"user_id": uid, "kind": "service", "is_active": True}),
+    )
+    return {"my_haves": haves, "my_needs": needs, "my_services": services}
+
+
+async def _get_my_trade_counts(uid: str) -> dict:
+    my_side = {"$or": [{"proposer_id": uid}, {"recipient_id": uid}]}
+    completed, active = await asyncio.gather(
+        db.trades.count_documents({**my_side, "status": "completed"}),
+        db.trades.count_documents({**my_side, "status": {"$nin": ["completed", "cancelled", "declined"]}}),
+    )
+    return {"my_completed_trades": completed, "my_active_trades": active}
+
+
+async def _get_nearby_counts(user: dict) -> dict:
+    """Count active listings within the user's search radius, split by kind. Zeroes if no location set."""
+    if user.get("approx_lat") is None or user.get("approx_lng") is None:
+        return {"nearby_haves": 0, "nearby_needs": 0, "nearby_services": 0}
+    uid = user["user_id"]
+    radius = user.get("search_radius_miles") or 10
+    others = await db.listings.find(
+        {"user_id": {"$ne": uid}, "is_active": True},
+        {"_id": 0, "kind": 1, "user_id": 1},
+    ).limit(2000).to_list(2000)
+    if not others:
+        return {"nearby_haves": 0, "nearby_needs": 0, "nearby_services": 0}
+    owner_ids = list({d["user_id"] for d in others})
+    owners = {
+        u["user_id"]: u
+        async for u in db.users.find(
+            {"user_id": {"$in": owner_ids}},
+            {"_id": 0, "user_id": 1, "approx_lat": 1, "approx_lng": 1},
+        )
+    }
+    counts = {"have": 0, "need": 0, "service": 0}
+    for d in others:
+        o = owners.get(d["user_id"])
+        if not o or o.get("approx_lat") is None:
+            continue
+        dist = haversine_miles(user["approx_lat"], user["approx_lng"], o["approx_lat"], o["approx_lng"])
+        if dist <= radius and d["kind"] in counts:
+            counts[d["kind"]] += 1
+    return {
+        "nearby_haves": counts["have"],
+        "nearby_needs": counts["need"],
+        "nearby_services": counts["service"],
+    }
+
+
 @api.get("/dashboard/stats")
 async def dashboard_stats(user: dict = Depends(get_current_user)):
     """Personal dashboard stats — accurate to THIS user's own listings + nearby counts within their radius."""
     uid = user["user_id"]
-    mine_haves = await db.listings.count_documents({"user_id": uid, "kind": "have", "is_active": True})
-    mine_needs = await db.listings.count_documents({"user_id": uid, "kind": "need", "is_active": True})
-    mine_services = await db.listings.count_documents({"user_id": uid, "kind": "service", "is_active": True})
-    my_trades = await db.trades.count_documents({"$or": [{"proposer_id": uid}, {"recipient_id": uid}], "status": "completed"})
-    active_trades = await db.trades.count_documents({"$or": [{"proposer_id": uid}, {"recipient_id": uid}], "status": {"$nin": ["completed", "cancelled", "declined"]}})
-
-    # nearby counts — only meaningful if user has coordinates
-    nearby_haves = nearby_needs = nearby_services = 0
-    if user.get("approx_lat") is not None and user.get("approx_lng") is not None:
-        radius = user.get("search_radius_miles") or 10
-        cursor = db.listings.find({"user_id": {"$ne": uid}, "is_active": True}, {"_id": 0, "kind": 1, "user_id": 1}).limit(2000)
-        others = await cursor.to_list(2000)
-        # bulk fetch owner coords
-        owner_ids = list({d["user_id"] for d in others})
-        owners = {u["user_id"]: u async for u in db.users.find({"user_id": {"$in": owner_ids}}, {"_id": 0, "user_id": 1, "approx_lat": 1, "approx_lng": 1})}
-        for d in others:
-            o = owners.get(d["user_id"])
-            if not o or o.get("approx_lat") is None:
-                continue
-            dist = haversine_miles(user["approx_lat"], user["approx_lng"], o["approx_lat"], o["approx_lng"])
-            if dist <= radius:
-                if d["kind"] == "have": nearby_haves += 1
-                elif d["kind"] == "need": nearby_needs += 1
-                elif d["kind"] == "service": nearby_services += 1
-
+    listing_counts, trade_counts, nearby_counts = await asyncio.gather(
+        _get_my_listing_counts(uid),
+        _get_my_trade_counts(uid),
+        _get_nearby_counts(user),
+    )
     return {
-        "my_haves": mine_haves,
-        "my_needs": mine_needs,
-        "my_services": mine_services,
-        "my_completed_trades": my_trades,
-        "my_active_trades": active_trades,
-        "nearby_haves": nearby_haves,
-        "nearby_needs": nearby_needs,
-        "nearby_services": nearby_services,
+        **listing_counts,
+        **trade_counts,
+        **nearby_counts,
         "has_location": user.get("approx_lat") is not None,
         "radius_miles": user.get("search_radius_miles") or 10,
     }

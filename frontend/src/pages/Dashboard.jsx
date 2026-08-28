@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -14,24 +14,24 @@ export default function Dashboard() {
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [ml, mm, mt, st] = await Promise.all([
-          api.get("/listings?mine=true"),
-          api.get("/matches"),
-          api.get("/trades"),
-          api.get("/dashboard/stats"),
-        ]);
-        setMine(ml.data);
-        setMatches(mm.data);
-        setTrades(mt.data);
-        setStats(st.data);
-      } catch (e) {
-        console.error("[dashboard] load failed", e?.response?.status || e?.message);
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      const [ml, mm, mt, st] = await Promise.all([
+        api.get("/listings?mine=true"),
+        api.get("/matches"),
+        api.get("/trades"),
+        api.get("/dashboard/stats"),
+      ]);
+      setMine(ml.data);
+      setMatches(mm.data);
+      setTrades(mt.data);
+      setStats(st.data);
+    } catch (e) {
+      console.error("[dashboard] load failed", e?.response?.status || e?.message);
+    }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const activeTrades = trades.filter((t) => !["completed", "cancelled", "declined"].includes(t.status));
   const meetups = trades.filter((t) => t.meetup && ["accepted", "meetup_planned"].includes(t.status));
